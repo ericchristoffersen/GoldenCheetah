@@ -140,16 +140,19 @@ class ErgFile
         bool isValid() const;   // is the file valid or not?
 
         double Cp;
-        int format;                      // ERG, CRS, MRC, ERG2 currently supported
-        double wattsAt   (double, int&); // return the watts value for the passed msec
-        double gradientAt(double, int&); // return the gradient value for the passed meter
-        bool locationAt  (double x, int& lapnum, geolocation &geoLoc, double &slope100); // location at meter
+        int format;             // ERG, CRS, MRC, ERG2 currently supported
 
-        // Stateless version of locationAt for independent route queries.
-        bool locationAtStateless(ErgFileLocationQueryState& queryState, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const;
+private:
+        // Common helper to setup query state for query. Returns false if bracket cannot be established.
+        bool   updateQueryStateFromDistance(ErgFileLocationQueryState& qs, double x, int& lapnum) const;
 
-        int nextLap(long);      // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
-        int currentLap(long);   // return the start value (erg - time(ms) or slope - distance(m)) for the current lap
+public:
+        double wattsAt   (ErgFileLocationQueryState& locationQueryState, double msec,   int& lapnum) const; // return the watts value for the msec
+        double gradientAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum) const; // return the gradient value for the meter
+        bool   locationAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum, geolocation &geoLoc, double &slope100) const; // interpolated location at meter
+
+        int nextLap(long) const;    // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
+        int currentLap(long) const; // return the start value (erg - time(ms) or slope - distance(m)) for the current lap
 
         // turn the ergfile into a series of sections rather
         // than a list of points
@@ -168,12 +171,12 @@ class ErgFile
         long    Duration;       // Duration of this workout in msecs
         int     Ftp;            // FTP this file was targetted at
         int     MaxWatts;       // maxWatts in this ergfile (scaling)
-        bool valid;             // did it parse ok?
-        int mode;
+        bool    valid;          // did it parse ok?
+        int     mode;
         bool    StrictGradient; // should gradient be strict or smoothed?
 
-        int leftPoint, rightPoint;     // current points we are between
-        int interpolatorReadIndex;     // next point to be fed to interpolator
+        //int leftPoint, rightPoint;     // current points we are between
+        //int interpolatorReadIndex;     // next point to be fed to interpolator
 
         QList<ErgFilePoint> Points;    // points in workout
         QList<ErgFileLap>   Laps;      // interval markers in the file

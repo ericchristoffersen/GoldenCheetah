@@ -510,11 +510,12 @@ WPrime::setErg(ErgFile *input)
         double countBelowCP=0;
         QVector<int> powerValues(last+1);
         EXP = 0;
+        ErgFileLocationQueryState qs;
         for (int i=0; i<last; i++) {
 
             // get watts at point in time
             int lap;
-            int value = input->wattsAt(i*1000, lap);
+            int value = input->wattsAt(qs, i*1000, lap);
 
             powerValues[i] = value > CP ? value-CP : 0;
 
@@ -563,10 +564,12 @@ WPrime::setErg(ErgFile *input)
         // and will also contain non-zero values
         double W = WPRIME;
         int lap; // passed by reference
+        ErgFileLocationQueryState qs;
+
         for (int i=0; i<last; i++) {
 
             // get watts at point in time
-            int value = input->wattsAt(i*1000, lap);
+            int value = input->wattsAt(qs, i*1000, lap);
 
             if(value < CP) {
                 W  = W + (CP-value)*(WPRIME-W)/WPRIME;

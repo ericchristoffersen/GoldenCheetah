@@ -1749,7 +1749,7 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
                     if (!ergFile->StrictGradient) {
                         // Attempt to obtain location and derived slope from altitude in ergfile.
                         geolocation geoloc;
-                        if (ergFile->locationAt(displayWorkoutDistance * 1000, displayWorkoutLap, geoloc, slope)) {
+                        if (ergFile->locationAt(ergFileQueryState, displayWorkoutDistance * 1000, displayWorkoutLap, geoloc, slope)) {
                             displayLatitude = geoloc.Lat();
                             displayLongitude = geoloc.Long();
                             displayAltitude = geoloc.Alt();
@@ -1763,7 +1763,7 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
                     }
 
                     if (ergFile->StrictGradient || !fAltitudeSet) {
-                        slope = ergFile->gradientAt(displayWorkoutDistance * 1000, displayWorkoutLap);
+                        slope = ergFile->gradientAt(ergFileQueryState, displayWorkoutDistance * 1000, displayWorkoutLap);
                     }
 
                     rtData.setSlope(slope);
@@ -1792,7 +1792,7 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
                 else lapTimeRemaining = 0;
 
                 long ergTimeRemaining;
-                if (ergFile) ergTimeRemaining = ergFile->Points.at(ergFile->rightPoint).x - load_msecs;
+                if (ergFile) ergTimeRemaining = ergFile->Points.at(ergFileQueryState.rightPoint).x - load_msecs;
                 else ergTimeRemaining = 0;
 
 #if defined Q_OS_LINUX && QT_VERSION < 0x050600
@@ -2048,7 +2048,7 @@ void TrainSidebar::loadUpdate()
     load_msecs += load_period.restart();
 
     if (status&RT_MODE_ERGO) {
-        load = ergFile->wattsAt(load_msecs, curLap);
+        load = ergFile->wattsAt(ergFileQueryState, load_msecs, curLap);
 
         if(displayWorkoutLap != curLap)
         {

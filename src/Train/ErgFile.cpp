@@ -126,12 +126,10 @@ void ErgFile::parseZwift()
     Filename = "";
     Name = "";
     Duration = -1;
-    Ftp = 0;            // FTP this file was targetted at
-    MaxWatts = 0;       // maxWatts in this ergfile (scaling)
-    valid = false;             // did it parse ok?
-    rightPoint = leftPoint = 0;
-    interpolatorReadIndex = 0;
-    format = ERG; // default to couse until we know
+    Ftp = 0;       // FTP this file was targetted at
+    MaxWatts = 0;  // maxWatts in this ergfile (scaling)
+    valid = false; // did it parse ok?
+    format = ERG;  // default to couse until we know
     Points.clear();
     Laps.clear();
 
@@ -169,9 +167,6 @@ void ErgFile::parseZwift()
     if (Points.count()) {
         valid = true;
         Duration = Points.last().x;      // last is the end point in msecs
-        leftPoint = 0;
-        rightPoint = 1;
-        interpolatorReadIndex = 0;
 
         // calculate climbing etc
         calculateMetrics();
@@ -187,12 +182,10 @@ void ErgFile::parseErg2(QString p)
     Filename = "";
     Name = "";
     Duration = -1;
-    Ftp = 0;            // FTP this file was targetted at
-    MaxWatts = 0;       // maxWatts in this ergfile (scaling)
-    valid = false;             // did it parse ok?
-    rightPoint = leftPoint = 0;
-    interpolatorReadIndex = 0;
-    format = ERG; // default to couse until we know
+    Ftp = 0;       // FTP this file was targetted at
+    MaxWatts = 0;  // maxWatts in this ergfile (scaling)
+    valid = false; // did it parse ok?
+    format = ERG;  // default to couse until we know
     Points.clear();
     Laps.clear();
 
@@ -236,10 +229,6 @@ void ErgFile::parseErg2(QString p)
             // set ErgFile duration
             Duration = Points.last().x;      // last is the end point in msecs
 
-            leftPoint = 0;                   // setup initial sample bracketing
-            rightPoint = 1;
-            interpolatorReadIndex = 0;
-
             calculateMetrics();
             valid = true;
         }
@@ -254,12 +243,10 @@ void ErgFile::parseTacx()
     Filename = "";
     Name = "";
     Duration = -1;
-    Ftp = 0;            // FTP this file was targetted at
-    MaxWatts = 0;       // maxWatts in this ergfile (scaling)
-    valid = false;             // did it parse ok?
-    rightPoint = leftPoint = 0;
-    interpolatorReadIndex = 0;
-    format = CRS; // default to couse until we know
+    Ftp = 0;        // FTP this file was targetted at
+    MaxWatts = 0;   // maxWatts in this ergfile (scaling)
+    valid = false;  // did it parse ok?
+    format = CRS;   // default to couse until we know
     Points.clear();
     Laps.clear();
 
@@ -428,9 +415,6 @@ void ErgFile::parseTacx()
 
         // set ErgFile duration
         Duration = Points.last().x;      // last is the end point in msecs
-        leftPoint = 0;
-        rightPoint = 1;
-        interpolatorReadIndex = 0;
 
         // calculate climbing etc
         calculateMetrics();
@@ -441,7 +425,6 @@ void ErgFile::parseComputrainer(QString p)
 {
     QFile ergFile(filename);
     int section = NOMANSLAND;            // section 0=init, 1=header data, 2=course data
-    leftPoint=rightPoint=0;
     MaxWatts = Ftp = 0;
     int lapcounter = 0;
     format = ERG;                         // either ERG or MRC
@@ -682,10 +665,6 @@ void ErgFile::parseComputrainer(QString p)
         // set ErgFile duration
         Duration = Points.last().x;      // last is the end point in msecs
 
-        leftPoint = 0;
-        rightPoint = 1;
-        interpolatorReadIndex = 0;
-
         calculateMetrics();
 
     } else {
@@ -702,11 +681,9 @@ void ErgFile::parseGpx()
     Filename = "";
     Name = "";
     Duration = -1;
-    Ftp = 0;            // FTP this file was targetted at
-    MaxWatts = 0;       // maxWatts in this ergfile (scaling)
-    valid = false;             // did it parse ok?
-    rightPoint = leftPoint = 0;
-    interpolatorReadIndex = 0;
+    Ftp = 0;       // FTP this file was targetted at
+    MaxWatts = 0;  // maxWatts in this ergfile (scaling)
+    valid = false; // did it parse ok?
     format = mode = CRS;
     Points.clear();
     Laps.clear();
@@ -809,10 +786,6 @@ void ErgFile::parseGpx()
     // set ErgFile duration
     Duration = Points.last().x;      // end point in meters
 
-    leftPoint = 0;                   // setup initial sample bracketing
-    rightPoint = 1;
-    interpolatorReadIndex = 0;
-
     // calculate climbing etc
     calculateMetrics();
 }
@@ -826,11 +799,9 @@ void ErgFile::parseTTS()
     Filename = "";
     Name = "";
     Duration = -1;
-    Ftp = 0;                   // FTP this file was targetted at
-    MaxWatts = 0;              // maxWatts in this ergfile (scaling)
-    valid = false;             // did it parse ok?
-    rightPoint = leftPoint = 0;
-    interpolatorReadIndex = 0;
+    Ftp = 0;       // FTP this file was targetted at
+    MaxWatts = 0;  // maxWatts in this ergfile (scaling)
+    valid = false; // did it parse ok?
     format = mode = CRS;
     Points.clear();
     Laps.clear();
@@ -947,10 +918,6 @@ void ErgFile::parseTTS()
 
     // set ErgFile duration
     Duration = Points.last().x;      // end point in meters
-
-    leftPoint = 0;                   // setup initial sample bracketing
-    rightPoint = 1;
-    interpolatorReadIndex = 0;
 
     // calculate climbing etc
     calculateMetrics();
@@ -1295,225 +1262,99 @@ ErgFile::isValid() const
     return valid;
 }
 
-double
-ErgFile::wattsAt(double x, int &lapnum)
-{
-    // workout what wattage load should be set for any given
-    // point in time in msecs.
-    if (!isValid()) return -100; // not a valuid ergfile
-
-    // is it in bounds?
-    if (x < 0 || x > Duration) return -100;   // out of bounds!!!
-
-    // do we need to return the Lap marker?
-    if (Laps.count() > 0) {
-        int lap=0;
-        for (int i=0; i<Laps.count(); i++) {
-            if (x>=Laps.at(i).x) lap += 1;
-        }
-        lapnum = lap;
-
-    } else lapnum = 0;
-
-    // find right section of the file
-    while (x < Points.at(leftPoint).x || x > Points.at(rightPoint).x) {
-        if (x < Points.at(leftPoint).x) {
-            leftPoint--;
-            rightPoint--;
-        } else if (x > Points.at(rightPoint).x) {
-            leftPoint++;
-            rightPoint++;
-        }
-    }
-
-    // two different points in time but the same watts
-    // at both, it doesn't really matter which value
-    // we use
-    if (Points.at(leftPoint).val == Points.at(rightPoint).val)
-        return Points.at(rightPoint).val;
-
-    // the erg file will list the point in time twice
-    // to show a jump from one wattage to another
-    // at this point in ime (i.e x=100 watts=100 followed
-    // by x=100 watts=200)
-    if (Points.at(leftPoint).x == Points.at(rightPoint).x)
-        return Points.at(rightPoint).val;
-
-    // so this point in time between two points and
-    // we are ramping from one point and another
-    // the steps in the calculation have been explicitly
-    // listed for code clarity
-    double deltaW = Points.at(rightPoint).val - Points.at(leftPoint).val;
-    double deltaT = Points.at(rightPoint).x - Points.at(leftPoint).x;
-    double offT = x - Points.at(leftPoint).x;
-    double factor = offT / deltaT;
-
-    double nowW = Points.at(leftPoint).val + (deltaW * factor);
-
-    return nowW;
-}
-
-double
-ErgFile::gradientAt(double x, int &lapnum)
-{
-    // workout what wattage load should be set for any given
-    // point in time in msecs.
-    if (!isValid()) return -100; // not a valid ergfile
-
-    // is it in bounds?
-    if (x < 0 || x > Duration) return -100;   // out of bounds!!! (-40 through +40 are valid return vals)
-
-    // do we need to return the Lap marker?
-    if (Laps.count() > 0) {
-        int lap=0;
-        for (int i=0; i<Laps.count(); i++) {
-            if (x>=Laps.at(i).x) lap += 1;
-        }
-        lapnum = lap;
-
-    } else lapnum = 0;
-
-    // find right section of the file
-    while (x < Points.at(leftPoint).x || x > Points.at(rightPoint).x) {
-        if (x < Points.at(leftPoint).x) {
-            leftPoint--;
-            rightPoint--;
-        } else if (x > Points.at(rightPoint).x) {
-            leftPoint++;
-            rightPoint++;
-        }
-    }
-
-    double gradient = Points.at(leftPoint).val;
-
-    return gradient;
-}
-
-// Returns true if a location is determined, otherwise returns false.
-bool ErgFile::locationAt(double meters, int &lapnum, geolocation &geoLoc, double &slope100)
+// Update query state to bracket query location.
+// Returns false if bracket cannot be established, otherwise true.
+bool
+ErgFile::updateQueryStateFromDistance(ErgFileLocationQueryState& qs, double x, int& lapnum) const
 {
     if (!isValid()) return false; // not a valid ergfile
 
     // is it in bounds?
-    if (meters < 0 || meters > Duration) return false;
+    if (x < 0 || x > Duration) return false;
 
-    // No location unless... format contains location...
-    if (format != CRS)  return false;
-
+    // do we need to return the Lap marker?
     if (Laps.count() > 0) {
         int lap = 0;
-        for (int i = 0; i<Laps.count(); i++) {
-            if (meters >= Laps.at(i).x) lap += 1;
+        for (int i = 0; i < Laps.count(); i++) {
+            if (x >= Laps.at(i).x) lap += 1;
         }
         lapnum = lap;
 
     }
     else lapnum = 0;
 
-    // Ensure that interpolator is correctly primed for this request.
-
     // find right section of the file
-    while (meters < Points.at(leftPoint).x || meters > Points.at(rightPoint).x) {
-        if (meters < Points.at(leftPoint).x) {
-            leftPoint--;
-            rightPoint--;
+    while (x < Points.at(qs.leftPoint).x || x > Points.at(qs.rightPoint).x) {
+        if (x < Points.at(qs.leftPoint).x) {
+            qs.leftPoint--;
+            qs.rightPoint--;
         }
-        else if (meters > Points.at(rightPoint).x) {
-            leftPoint++;
-            rightPoint++;
-        }
-    }
-
-    // At this point leftpoint and rightpoint bracket the query distance. Three cases:
-    // Bracket Covered: If query bracket compatible with the current interpolation bracket then simply interpolate
-    // Bracket Ahead:   If query bracket is ahead of current interpolation bracket then feed points to interpolator until it matches.
-    // Bracket Behind:  New bracket is behind current interpolation bracket then interpolator must be reset and new values fed in.
-
-    double d0, d1;
-
-    if (!gpi.GetBracket(d0, d1))
-    {
-        interpolatorReadIndex = 0;
-        gpi.Reset();
-    } else if (d0 > Points.at(leftPoint).x) {
-        // Current bracket is ahead of interpolator so reset and set index back
-        // so interpolator will be re-primed.
-        gpi.Reset();
-        interpolatorReadIndex = (leftPoint > 0) ? leftPoint - 1 : leftPoint;
-    } else {
-        // Otherwise interpolatorReadIndex is set reasonably.
-        // Is possible to skip ahead though...
-        if (interpolatorReadIndex < rightPoint - 4)
-        {
-            interpolatorReadIndex = rightPoint - 4;
+        else if (x > Points.at(qs.rightPoint).x) {
+            qs.leftPoint++;
+            qs.rightPoint++;
         }
     }
 
-    // Push points until distance satisfied
-    while (gpi.WantsInput(meters)) {
-        if (interpolatorReadIndex < Points.count()) {
-            const ErgFilePoint * pii = &(Points.at(interpolatorReadIndex));
-
-            // When there is no geolocation, invent something to support tangent interpolation.
-            if (pii->lat || pii->lon) {
-                geolocation geo(pii->lat, pii->lon, pii->y);
-                gpi.Push(pii->x, geo);
-            } else {
-                gpi.Push(pii->x, pii->y);
-            }
-
-            interpolatorReadIndex++;
-        }
-        else {
-            gpi.NotifyInputComplete();
-            break;
-        }
-    }
-
-    geoLoc = gpi.Location(meters, slope100);
-
-    slope100 *= 100;
-    
     return true;
+}
+
+
+double
+ErgFile::wattsAt(ErgFileLocationQueryState& qs, double x, int &lapnum) const
+{
+    // Establish index bracket for query.
+    if (!updateQueryStateFromDistance(qs, x, lapnum))
+        return -100;
+
+    // two different points in time but the same watts
+    // at both, it doesn't really matter which value
+    // we use
+    if (Points.at(qs.leftPoint).val == Points.at(qs.rightPoint).val)
+        return Points.at(qs.rightPoint).val;
+
+    // the erg file will list the point in time twice
+    // to show a jump from one wattage to another
+    // at this point in ime (i.e x=100 watts=100 followed
+    // by x=100 watts=200)
+    if (Points.at(qs.leftPoint).x == Points.at(qs.rightPoint).x)
+        return Points.at(qs.rightPoint).val;
+
+    // so this point in time between two points and
+    // we are ramping from one point and another
+    // the steps in the calculation have been explicitly
+    // listed for code clarity
+    double deltaW = Points.at(qs.rightPoint).val - Points.at(qs.leftPoint).val;
+    double deltaT = Points.at(qs.rightPoint).x - Points.at(qs.leftPoint).x;
+    double offT = x - Points.at(qs.leftPoint).x;
+    double factor = offT / deltaT;
+
+    double nowW = Points.at(qs.leftPoint).val + (deltaW * factor);
+
+    return nowW;
+}
+
+// Uninterpolated gradient from ergfile. Used when running in strict gradient/workout mode.
+double
+ErgFile::gradientAt(ErgFileLocationQueryState& qs, double x, int &lapnum) const
+{
+    // Establish index bracket for query.
+    if (!updateQueryStateFromDistance(qs, x, lapnum))
+        return -100;
+
+    double gradient = Points.at(qs.leftPoint).val;
+
+    return gradient;
 }
 
 // Returns true if a location is determined, otherwise returns false.
 // This is the const stateless edition(tm), which does not rely on location
 // state. This method is used to make queries independant of the main ergfile
 // 'owner'.
-bool ErgFile::locationAtStateless(ErgFileLocationQueryState& queryState, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const
+bool ErgFile::locationAt(ErgFileLocationQueryState& qs, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const
 {
-    if (!isValid()) return false; // not a valid ergfile
-
-    // is it in bounds?
-    if (meters < 0 || meters > Duration) return false;
-
-    // No location unless... format contains location...
-    if (format != CRS)  return false;
-
-    if (Laps.count() > 0) {
-        int lap = 0;
-        for (int i = 0; i < Laps.count(); i++) {
-            if (meters >= Laps.at(i).x) lap += 1;
-        }
-        lapnum = lap;
-
-    }
-    else lapnum = 0;
-
-    // Ensure that interpolator is correctly primed for this request.
-
-    // find right section of the file
-    while (meters < Points.at(queryState.leftPoint).x || meters > Points.at(queryState.rightPoint).x) {
-        if (meters < Points.at(queryState.leftPoint).x) {
-            queryState.leftPoint--;
-            queryState.rightPoint--;
-        }
-        else if (meters > Points.at(queryState.rightPoint).x) {
-            queryState.leftPoint++;
-            queryState.rightPoint++;
-        }
-    }
+    // Establish index bracket for query.
+    if (!updateQueryStateFromDistance(qs, meters, lapnum))
+        return false;
 
     // At this point leftpoint and rightpoint bracket the query distance. Three cases:
     // Bracket Covered: If query bracket compatible with the current interpolation bracket then simply interpolate
@@ -1522,49 +1363,49 @@ bool ErgFile::locationAtStateless(ErgFileLocationQueryState& queryState, double 
 
     double d0, d1;
 
-    if (!queryState.gpi.GetBracket(d0, d1))
+    if (!qs.gpi.GetBracket(d0, d1))
     {
-        queryState.interpolatorReadIndex = 0;
-        queryState.gpi.Reset();
+        qs.interpolatorReadIndex = 0;
+        qs.gpi.Reset();
     }
-    else if (d0 > Points.at(queryState.leftPoint).x) {
+    else if (d0 > Points.at(qs.leftPoint).x) {
         // Current bracket is ahead of interpolator so reset and set index back
         // so interpolator will be re-primed.
-        queryState.gpi.Reset();
-        queryState.interpolatorReadIndex = (queryState.leftPoint > 0) ? queryState.leftPoint - 1 : queryState.leftPoint;
+        qs.gpi.Reset();
+        qs.interpolatorReadIndex = (qs.leftPoint > 0) ? qs.leftPoint - 1 : qs.leftPoint;
     }
     else {
         // Otherwise interpolatorReadIndex is set reasonably.
         // Is possible to skip ahead though...
-        if (queryState.interpolatorReadIndex < queryState.rightPoint - 4)
+        if (qs.interpolatorReadIndex < qs.rightPoint - 4)
         {
-            queryState.interpolatorReadIndex = queryState.rightPoint - 4;
+            qs.interpolatorReadIndex = qs.rightPoint - 4;
         }
     }
 
     // Push points until distance satisfied
-    while (queryState.gpi.WantsInput(meters)) {
-        if (queryState.interpolatorReadIndex < Points.count()) {
-            const ErgFilePoint* pii = &(Points.at(queryState.interpolatorReadIndex));
+    while (qs.gpi.WantsInput(meters)) {
+        if (qs.interpolatorReadIndex < Points.count()) {
+            const ErgFilePoint* pii = &(Points.at(qs.interpolatorReadIndex));
 
             // When there is no geolocation, invent something to support tangent interpolation.
             if (pii->lat || pii->lon) {
                 geolocation geo(pii->lat, pii->lon, pii->y);
-                queryState.gpi.Push(pii->x, geo);
+                qs.gpi.Push(pii->x, geo);
             }
             else {
-                queryState.gpi.Push(pii->x, pii->y);
+                qs.gpi.Push(pii->x, pii->y);
             }
 
-            queryState.interpolatorReadIndex++;
+            qs.interpolatorReadIndex++;
         }
         else {
-            queryState.gpi.NotifyInputComplete();
+            qs.gpi.NotifyInputComplete();
             break;
         }
     }
 
-    geoLoc = queryState.gpi.Location(meters, slope100);
+    geoLoc = qs.gpi.Location(meters, slope100);
 
     slope100 *= 100;
 
@@ -1575,7 +1416,7 @@ bool ErgFile::locationAtStateless(ErgFileLocationQueryState& queryState, double 
 // Retrieve the offset for the start of next lap.
 // Params: x - current workout distance (m) / time (ms)
 // Returns: distance (m) / time (ms) offset for next lap.
-int ErgFile::nextLap(long x)
+int ErgFile::nextLap(long x) const
 {
     if (!isValid()) return -1; // not a valid ergfile
 
@@ -1593,7 +1434,7 @@ int ErgFile::nextLap(long x)
 // Params: x - current workout distance (m) / time (ms)
 // Returns: distance (m) / time (ms) offset for start of current lap.
 int
-ErgFile::currentLap(long x)
+ErgFile::currentLap(long x) const
 {
     if (!isValid()) return -1; // not a valid ergfile
 
@@ -1607,7 +1448,6 @@ ErgFile::currentLap(long x)
 void
 ErgFile::calculateMetrics()
 {
-
     // reset metrics
     XP = CP = AP = IsoPower = IF = RI = BikeStress = BS = SVI = VI = 0;
     ELE = ELEDIST = GRADE = 0;

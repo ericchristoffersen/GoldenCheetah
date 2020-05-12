@@ -280,8 +280,11 @@ class TrainSidebar : public GcWindow
         int lastRecordSecs;     // to avoid duplicates
         QFile *rrFile;          // r-r records, if any received.
         QFile *vo2File;         // vo2 records, if any received.
-        ErgFile *ergFile;       // workout file
-        VideoSyncFile *videosyncFile;       // videosync file
+
+        ErgFileLocationQueryState  ergFileQueryState; // current index state for ergfile queries.
+        ErgFile                   *ergFile;           // workout file
+
+        VideoSyncFile             *videosyncFile;     // videosync file
 
         bool     startCalibration, restartCalibration, finishCalibration;
         int      calibrationDeviceIndex;

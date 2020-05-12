@@ -92,6 +92,26 @@ class ErgFileLap
         QString name;
 };
 
+// Store state used for location query external to ergfile. This permits sharing
+// to simulataniusly query multiple locations.
+struct ErgFileLocationQueryState
+{
+    int leftPoint, rightPoint;     // current points we are between
+    int interpolatorReadIndex;     // next point to be fed to interpolator
+    GeoPointInterpolator gpi;      // Location interpolator
+
+    ErgFileLocationQueryState() {
+        Reset();
+    }
+
+    void Reset() {
+        leftPoint = 0;
+        rightPoint = 1;
+        interpolatorReadIndex = 0;
+        gpi.Reset();
+    }
+};
+
 class ErgFile
 {
     public:
@@ -117,13 +137,16 @@ class ErgFile
         void parseErg2(QString p = "");       // ergdb
         void parseTTS();        // its ahh tts
 
-        bool isValid();         // is the file valid or not?
+        bool isValid() const;   // is the file valid or not?
 
         double Cp;
         int format;                      // ERG, CRS, MRC, ERG2 currently supported
         double wattsAt   (double, int&); // return the watts value for the passed msec
         double gradientAt(double, int&); // return the gradient value for the passed meter
         bool locationAt  (double x, int& lapnum, geolocation &geoLoc, double &slope100); // location at meter
+
+        // Stateless version of locationAt for independent route queries.
+        bool locationAtStateless(ErgFileLocationQueryState& queryState, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const;
 
         int nextLap(long);      // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
         int currentLap(long);   // return the start value (erg - time(ms) or slope - distance(m)) for the current lap

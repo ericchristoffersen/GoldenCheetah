@@ -487,9 +487,13 @@ Section "Golden Cheetah (required)" Sec1
   File "printsupport\windowsprintersupport.dll"
   SetOutPath "$INSTDIR"
   File "PYTHON LICENSE.txt"
+<<<<<<< HEAD
   File "python37.dll"
   File "gsl.dll"
   File "gslcblas.dll"
+=======
+  File "python36.dll"
+>>>>>>> fdefd6309ce83ecddf899d7a517e86f387eaaeb6
   SetOutPath "$INSTDIR"
   File "Qt5Bluetooth.dll"
   File "Qt5Charts.dll"
@@ -1019,9 +1023,13 @@ Section Uninstall
   Delete "$INSTDIR\position\qtposition_winrt.dll"
   Delete "$INSTDIR\printsupport\windowsprintersupport.dll"
   Delete "$INSTDIR\PYTHON LICENSE.txt"
+<<<<<<< HEAD
   Delete "$INSTDIR\python37.dll"
   Delete "$INSTDIR\gsl.dll"
   Delete "$INSTDIR\gslcblas.dll"
+=======
+  Delete "$INSTDIR\python36.dll"
+>>>>>>> fdefd6309ce83ecddf899d7a517e86f387eaaeb6
   Delete "$INSTDIR\Qt5Bluetooth.dll"
   Delete "$INSTDIR\Qt5Charts.dll"
   Delete "$INSTDIR\Qt5Concurrent.dll"

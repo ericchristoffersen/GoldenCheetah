@@ -364,7 +364,7 @@ void ElevationMeterWidget::paintEvent(QPaintEvent* paintevent)
     //Get point to create the polygon
     QPolygon polygon;
     polygon << QPoint(0.0, (double)m_Height);
-    double x=0.0, y=0.0, pt=0;
+    double x, y, pt=0;
     double nextX = 1;
     for( pt=0; pt < context->currentErgFile()->Points.size(); pt++)
     {
@@ -404,23 +404,6 @@ void ElevationMeterWidget::paintEvent(QPaintEvent* paintevent)
     } else {
         painter.drawText((double)cyclistX-45, ((double)m_Height * 0.95), s_grad);
     }
-
-    //Cosmetic enhancement: Display route distance in meters
-    double routeDistanceMeters = this->Value * 1000.;
-    QString s_dist = QString::number((int)routeDistanceMeters) + QString("m");
-
-    double paintX = (double)cyclistX;
-    double paintY = ((double)m_Height * 0.75);
-
-    // Display distance text to the right of the line until the middle, then display to the left of the line
-    if (cyclistX < m_Width * 0.5) {
-        paintX += 5;
-    }
-    else {
-        paintX -= 45;
-    }
-
-    painter.drawText(paintX, paintY, s_dist);
 } 
 
 
@@ -505,7 +488,7 @@ void LiveMapWidget::createHtml(double dLat, double dLon, int iMapZoom)
     "integrity=\"sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ==\" crossorigin=\"\"/>\n"
 	"<script src=\"https://unpkg.com/leaflet@1.6.0/dist/leaflet.js\"\n"
     "integrity=\"sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew==\" crossorigin=\"\"></script>\n"
-	"<style>#mapid {height:100%; width:100%;}</style></head>\n");
+	"<style>#mapid {height:300px;}</style></head>\n");
 
     // local functions
     currentPage += QString("<body><div id=\"mapid\"></div>\n"

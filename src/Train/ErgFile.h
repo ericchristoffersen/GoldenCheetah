@@ -151,10 +151,6 @@ public:
         double gradientAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum) const; // return the gradient value for the meter
         bool   locationAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum, geolocation &geoLoc, double &slope100) const; // interpolated location at meter
 
-
-        // Stateless version of locationAt for independent route queries.
-        bool locationAtStateless(ErgFileLocationQueryState& queryState, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const;
-
         int nextLap(long) const;    // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
         int currentLap(long) const; // return the start value (erg - time(ms) or slope - distance(m)) for the current lap
 

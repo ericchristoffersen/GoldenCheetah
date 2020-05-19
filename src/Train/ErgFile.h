@@ -92,6 +92,26 @@ class ErgFileLap
         QString name;
 };
 
+// Store state used for location query external to ergfile. This permits sharing
+// to simulataniusly query multiple locations.
+struct ErgFileLocationQueryState
+{
+    int leftPoint, rightPoint;     // current points we are between
+    int interpolatorReadIndex;     // next point to be fed to interpolator
+    GeoPointInterpolator gpi;      // Location interpolator
+
+    ErgFileLocationQueryState() {
+        Reset();
+    }
+
+    void Reset() {
+        leftPoint = 0;
+        rightPoint = 1;
+        interpolatorReadIndex = 0;
+        gpi.Reset();
+    }
+};
+
 class ErgFile
 {
     public:
@@ -106,27 +126,37 @@ class ErgFile
         static ErgFile *fromContent(QString, Context *); // read from memory *.erg
         static ErgFile *fromContent2(QString, Context *); // read from memory *.erg2
 
-        static bool isWorkout(QString);         // is this a supported workout?
+        static bool isWorkout(QString); // is this a supported workout?
 
-        void reload();                          // reload after messed about
+        void reload();          // reload after messed about
 
         void parseComputrainer(QString p = ""); // its an erg,crs or mrc file
-        void parseTacx();                       // its a pgmf file
-        void parseZwift();                      // its a zwo file (zwift xml)
-        void parseFromRideFileFactory();        // rideable and ingestable by ridefile factory
-        void parseErg2(QString p = "");         // ergdb
-        void parseTTS();                        // its ahh tts
+        void parseTacx();       // its a pgmf file
+        void parseZwift();      // its a zwo file (zwift xml)
+        void parseGpx();        // its a gpx...
+        void parseErg2(QString p = "");       // ergdb
+        void parseTTS();        // its ahh tts
 
-        bool isValid();                         // is the file valid or not?
+        bool isValid() const;   // is the file valid or not?
 
         double Cp;
-        int format;                      // ERG, CRS, MRC, ERG2 currently supported
-        double wattsAt   (double, int&); // return the watts value for the passed msec
-        double gradientAt(double, int&); // return the gradient value for the passed meter
-        bool locationAt  (double x, int& lapnum, geolocation &geoLoc, double &slope100); // location at meter
+        int format;             // ERG, CRS, MRC, ERG2 currently supported
 
-        int nextLap(long);      // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
-        int currentLap(long);   // return the start value (erg - time(ms) or slope - distance(m)) for the current lap
+private:
+        // Common helper to setup query state for query. Returns false if bracket cannot be established.
+        bool   updateQueryStateFromDistance(ErgFileLocationQueryState& qs, double x, int& lapnum) const;
+
+public:
+        double wattsAt   (ErgFileLocationQueryState& locationQueryState, double msec,   int& lapnum) const; // return the watts value for the msec
+        double gradientAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum) const; // return the gradient value for the meter
+        bool   locationAt(ErgFileLocationQueryState& locationQueryState, double meters, int& lapnum, geolocation &geoLoc, double &slope100) const; // interpolated location at meter
+
+
+        // Stateless version of locationAt for independent route queries.
+        bool locationAtStateless(ErgFileLocationQueryState& queryState, double meters, int& lapnum, geolocation& geoLoc, double& slope100) const;
+
+        int nextLap(long) const;    // return the start value (erg - time(ms) or slope - distance(m)) for the next lap
+        int currentLap(long) const; // return the start value (erg - time(ms) or slope - distance(m)) for the current lap
 
         // turn the ergfile into a series of sections rather
         // than a list of points
@@ -145,12 +175,12 @@ class ErgFile
         long    Duration;       // Duration of this workout in msecs
         int     Ftp;            // FTP this file was targetted at
         int     MaxWatts;       // maxWatts in this ergfile (scaling)
-        bool valid;             // did it parse ok?
-        int mode;
+        bool    valid;          // did it parse ok?
+        int     mode;
         bool    StrictGradient; // should gradient be strict or smoothed?
 
-        int leftPoint, rightPoint;     // current points we are between
-        int interpolatorReadIndex;     // next point to be fed to interpolator
+        //int leftPoint, rightPoint;     // current points we are between
+        //int interpolatorReadIndex;     // next point to be fed to interpolator
 
         QList<ErgFilePoint> Points;    // points in workout
         QList<ErgFileLap>   Laps;      // interval markers in the file

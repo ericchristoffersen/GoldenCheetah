@@ -81,7 +81,7 @@
 #include "Library.h"
 
 TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(context),
-    bicycle(context)
+    bicycle(context), myRabbit(context)
 {
     QWidget *c = new QWidget;
     //c->setContentsMargins(0,0,0,0); // bit of space is useful
@@ -372,6 +372,7 @@ TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(contex
 #ifndef Q_OS_MAC
     //toolbarButtons->hide();
 #endif
+
 
 }
 
@@ -1709,6 +1710,14 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
 
                 displaySpeed = ret.v;
                 distanceTick = ret.d;
+
+                myRabbit.Watts() = rtData.getWatts();
+                if (ergFile) {
+                    myRabbit.UpdateSelf(*ergFile);
+                }
+                double rabbitDistance = myRabbit.Distance();
+
+
             } else {
                 distanceTick = displaySpeed / (5 * 3600); // assumes 200ms refreshrate
             }

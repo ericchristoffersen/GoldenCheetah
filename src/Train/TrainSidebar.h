@@ -317,6 +317,9 @@ class TrainSidebar : public GcWindow
         QSharedPointer<QFileSystemWatcher> watcher;
         bool calibrating;
         double wbalr, wbal;
+
+        //rabbit1
+        SimulatedRider myRabbit;
 };
 
 class MultiDeviceDialog : public QDialog

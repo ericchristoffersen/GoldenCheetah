@@ -61,7 +61,8 @@ void NullController::setMode(int i) {
 
 void NullController::getRealtimeData(RealtimeData &rtData) {
     rtData.setName((char *)"Null");
-    rtData.setWatts(load + ((rand()%25)-15)); // for testing virtual power
+    //rtData.setWatts(load + ((rand()%25)-15)); // for testing virtual power
+    rtData.setWatts(150); // for testing virtual power
     rtData.setLoad(load);
 
     // Compute speed from principles and randomized power instead of randomizing it independantly.

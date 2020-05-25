@@ -19,11 +19,14 @@
 #if !defined(BICYCLESIM_H)
 #define BICYCLESIM_H
 
-#include <chrono>
-
 #include "RealtimeData.h"
 #include "PhysicsUtility.h"
 #include "ErgFile.h"
+
+#include <array>
+#include <chrono>
+#include <cstddef>
+#include <type_traits>
 
 class BicycleWheel
 {
@@ -230,6 +233,55 @@ public:
     double  Longitude()   const { return m_longitude; }   // valid if hasLocation returns true.
     double  Altitude()    const { return m_altitude; }    // always present
     double  Slope()       const { return m_slope; }       // always present
+};
+
+template <size_t T_riderCount>
+class RiderNest {
+
+    // Some gunkage to allow vararg init of std::array, so can call constructor on each element
+    // in init list.
+    template<std::size_t N, typename T, typename... Ts>
+    struct array_emplacer {
+        template<typename... Args, typename = std::enable_if_t<(sizeof...(Args), sizeof...(Ts) + 1 < N)>>
+            static std::array<T, N> emplace(Args const&... args) {
+                return array_emplacer<N, T, T, Ts...>::emplace(args...);
+            }
+
+            template<typename... Args, typename = std::enable_if_t<(sizeof...(Args), sizeof...(Ts) + 1 == N)>, typename = void>
+            static std::array<T, N> emplace(Args const&... args) {
+                return std::array<T, N>{ T(args...), Ts(args...)... };
+            }
+    };
+
+    template<typename T, std::size_t N, typename... Args>
+    std::array<T, N> emplace_array(Args const&... args) {
+        return array_emplacer<N, T>::emplace(args...);
+    }
+
+    std::array<SimulatedRider, T_riderCount> riders;
+
+public:
+
+    typedef typename std::array<double, T_riderCount> RiderDoubleArray;
+
+    RiderNest(Context* context) : riders(emplace_array<SimulatedRider, T_riderCount>(context)) {}
+
+    size_t size() const { return T_riderCount; }
+
+    void setWatts(const RiderDoubleArray& wattArray) {
+        for (size_t i = 0; i < T_riderCount; i++)
+            riders[i].Watts() = wattArray[i];
+    }
+
+    void update(const ErgFile* ergFile) {
+        for (size_t i = 0; i < T_riderCount; i++)
+            riders[i].UpdateSelf(ergFile);
+    }
+
+    void distance(RiderDoubleArray &distanceArray) const {
+        for (size_t i = 0; i < T_riderCount; i++)
+            distanceArray[i] = riders[i].Distance();
+    }
 };
 
 #endif // BICYCLESIM_H

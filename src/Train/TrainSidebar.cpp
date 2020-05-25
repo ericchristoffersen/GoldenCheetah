@@ -81,7 +81,7 @@
 #include "Library.h"
 
 TrainSidebar::TrainSidebar(Context *context) : GcWindow(context), context(context),
-    bicycle(context), myRabbit(context)
+    bicycle(context), riderNest(context)
 {
     QWidget *c = new QWidget;
     //c->setContentsMargins(0,0,0,0); // bit of space is useful
@@ -1710,17 +1710,29 @@ void TrainSidebar::guiUpdate()           // refreshes the telemetry
 
                 displaySpeed = ret.v;
                 distanceTick = ret.d;
-
-                myRabbit.Watts() = rtData.getWatts();
-                if (ergFile) {
-                    myRabbit.UpdateSelf(*ergFile);
-                }
-                double rabbitDistance = myRabbit.Distance();
-
-
             } else {
                 distanceTick = displaySpeed / (5 * 3600); // assumes 200ms refreshrate
             }
+
+            // --------------------------------------------
+            // Riders running in sync on ergfile.
+
+            decltype(riderNest)::RiderDoubleArray riderWatts = { rtData.getWatts() * 0.9, rtData.getWatts(), rtData.getWatts() * 1.05, rtData.getWatts() * 1.1 };
+
+            riderNest.setWatts(riderWatts);
+            riderNest.update(ergFile);
+
+            decltype(riderNest)::RiderDoubleArray distances; // array to receive distance result for all riders
+            riderNest.distance(distances); // populate that distance array from each rider
+
+            // rider 1 uses watts directly so is the same as rider
+            // compute the distances to the other riders
+            decltype(riderNest)::RiderDoubleArray riderDeltas;
+            for (size_t i = 0; i < riderNest.size(); i++) {
+                riderDeltas[i] = distances[1] - distances[i];
+            }
+
+            // --------------------------------------------
 
             // only update time & distance if actively running (not just connected, and not running but paused)
             if ((status&RT_RUNNING) && ((status&RT_PAUSED) == 0)) {

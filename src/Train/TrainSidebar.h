@@ -318,8 +318,7 @@ class TrainSidebar : public GcWindow
         bool calibrating;
         double wbalr, wbal;
 
-        //rabbit1
-        SimulatedRider myRabbit;
+        RiderNest<4> riderNest; // nest of 4 riders
 };
 
 class MultiDeviceDialog : public QDialog

@@ -97,7 +97,7 @@ public:
 
     // SET
     void setLoad(double load);                  // set the load to generate in ERGOMODE
-    void setSimState(double resistanceNewtons, double speedKph, double gradient); // set the load to generate in SSMODE
+    void setGradientWithSimState(double gradient, double resistanceNewtons, double speedKph); // set the load to generate in SSMODE
     void setBrakeCalibrationFactor(double calibrationFactor); // Impacts relationship between brake setpoint and load
     void setPowerScaleFactor(double calibrationFactor);       // Scales output power, so user can adjust to match hub or crank power meter
     void setMode(int mode);

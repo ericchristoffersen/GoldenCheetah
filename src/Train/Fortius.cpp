@@ -173,7 +173,7 @@ void Fortius::setLoad(double loadWatts)
 }
 
 // Resistance in newtons when implementing 'slope' mode
-void Fortius::setSimState(double resistanceNewtons, double speedKph, double gradient)
+void Fortius::setGradientWithSimState(double gradient, double resistanceNewtons, double speedKph)
 {
     Lock lock(pvars);
     this->resistanceNewtons = resistanceNewtons;

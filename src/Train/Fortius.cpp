@@ -50,9 +50,9 @@ const static uint8_t slope_command[12] = {
 //  https://github.com/totalreverse/ttyT1941/wiki#newer-usb-1264-bytes-protocol
 //
 // Power resistance factor is 137 * 289.75 * 3.6 ~= 142905
+static const double s_kphFactorMS = 3.6;
 static const double s_newtonsToResistanceFactor = 137;
-static const double s_deviceSpeedFactor = (289.75 * 3.6); 
-static const double s_powerResistanceFactor = s_newtonsToResistanceFactor * s_deviceSpeedFactor; // 142905;
+static const double s_deviceSpeedFactorMS = 289.75 * s_kphFactorMS; 
 
 class Lock
 {
@@ -84,10 +84,10 @@ public:
 
 // Using iFlow force limits because they are lowest.
 // Need ui work to support multiple devices.
-static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / 3.7, 800);
-//static const MaxForceAtSpeed s_iVortex(0, 0, 60 / 3.7, 900);
-//static const MaxForceAtSpeed s_iGenius(0, 0, 38 / 3.7, 1200);
-//static const MaxForceAtSpeed s_Bushido(0, 0, 40 / 3.7, 1200);
+static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / s_kphFactorMS, 800);
+//static const MaxForceAtSpeed s_iVortex(0, 0, 60 / s_kphFactorMS, 900);
+//static const MaxForceAtSpeed s_iGenius(0, 0, 38 / s_kphFactorMS, 1200);
+//static const MaxForceAtSpeed s_Bushido(0, 0, 40 / s_kphFactorMS, 1200);
 
 // Ensure that force never exceeds physical limit of device.
 double LimitResistanceNewtons(double speedMS, double newtons) {
@@ -100,7 +100,7 @@ double LimitResistanceNewtons(double speedMS, double newtons) {
 Fortius::Fortius(QObject *parent) : QThread(parent)
 {
     
-    devicePowerWatts = deviceHeartRate = deviceCadence = deviceSpeedMS = deviceWheelSpeed = 0.00;
+    deviceForceNewtons = devicePowerWatts = deviceHeartRate = deviceCadence = deviceSpeedMS = 0.00;
     mode = FT_IDLE;
     loadWatts = DEFAULT_LOAD;
     gradient = DEFAULT_GRADIENT;
@@ -177,7 +177,7 @@ void Fortius::setSimState(double resistanceNewtons, double speedKph, double grad
 {
     Lock lock(pvars);
     this->resistanceNewtons = resistanceNewtons;
-    this->simSpeedMS = speedKph / 3.7; // for aligning simulator and trainer speeds
+    this->simSpeedMS = speedKph / s_kphFactorMS; // for aligning simulator and trainer speeds
     this->gradient = gradient; // Eye candy, eventually remove. Not used to set load.
 }
 
@@ -190,7 +190,7 @@ void Fortius::getTelemetry(double &powerWatts, double &heartrate, double &cadenc
     powerWatts = devicePowerWatts;
     heartrate = deviceHeartRate;
     cadence = deviceCadence;
-    speedKph = deviceSpeedMS * 3.7;
+    speedKph = deviceSpeedMS * s_kphFactorMS;
     distance = deviceDistance;
     buttons = deviceButtons;
     steering = deviceSteering;
@@ -332,11 +332,11 @@ void Fortius::run()
     int curstatus;
 
     // variables for telemetry, copied to fields on each brake update
+    double curForceNewtons;               // current output power in Watts
     double curPowerWatts;                 // current output power in Watts
     double curHeartRate;                  // current heartrate in BPM
     double curCadence;                    // current cadence in RPM
     double curSpeedMS;                    // current speed in meters per second
-    double curWheelSpeed;                 // current wheel speed from trainer
     // UNUSED double curDistance;                    // odometer?
     int curButtons;                       // Button status
     int curSteering;                    // Angle of steering controller
@@ -355,11 +355,11 @@ void Fortius::run()
         Lock lock(pvars);
 
         // UNUSED curStatus = this->deviceStatus;
+        curForceNewtons = this->deviceForceNewtons = 0;
         curPowerWatts = this->devicePowerWatts = 0;
         curHeartRate = this->deviceHeartRate = 0;
         curCadence = this->deviceCadence = 0;
         curSpeedMS = this->deviceSpeedMS = 0;
-        curWheelSpeed = this->deviceWheelSpeed = 0;
         // UNUSED curDistance = this->deviceDistance = 0;
         curSteering = this->deviceSteering = 0;
         curButtons = this->deviceButtons = 0;
@@ -452,32 +452,36 @@ void Fortius::run()
 				
                 // speed
 
-                curWheelSpeed = (double)(qFromLittleEndian<quint16>(&buf[32]));
-                curSpeedMS = curWheelSpeed / (3.7 * 289.75);
+                curSpeedMS = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
 
                 // Power is torque * wheelspeed - adjusted by device resistance factor.
-                curPowerWatts = (qFromLittleEndian<qint16>(&buf[38]) * curWheelSpeed) / s_powerResistanceFactor;
-                if (curPowerWatts < 0.0) curPowerWatts = 0.0;  // brake power can be -ve when coasting. 
-                
-                // average power over last 10 readings
-                powertot += curPowerWatts;
-                powertot -= powerhist[powerindex];
-                powerhist[powerindex] = curPowerWatts;
+                curForceNewtons = qFromLittleEndian<qint16>(&buf[38]) / s_newtonsToResistanceFactor;
 
-                curPowerWatts = powertot / 10;
-                powerindex = (powerindex == 9) ? 0 : powerindex+1; 
+                curPowerWatts = curForceNewtons * curSpeedMS;
 
-                curPowerWatts *= powerScaleFactor; // apply scale factor
+                { // braces, just to collect power adjustments together, visually
+                    if (curPowerWatts < 0.0) curPowerWatts = 0.0;  // brake power can be -ve when coasting. 
                 
+                    // average power over last 10 readings
+                    powertot += curPowerWatts;
+                    powertot -= powerhist[powerindex];
+                    powerhist[powerindex] = curPowerWatts;
+
+                    curPowerWatts = powertot / 10;
+                    powerindex = (powerindex == 9) ? 0 : powerindex+1; 
+
+                    curPowerWatts *= powerScaleFactor; // apply scale factor
+                }
+
                 curHeartRate = buf[12];
 
                 // update public fields
                 {
                     Lock lock(pvars);
                     deviceSpeedMS = curSpeedMS;
-                    deviceWheelSpeed = curWheelSpeed;
                     deviceCadence = curCadence;
                     deviceHeartRate = curHeartRate;
+                    deviceForceNewtons = curForceNewtons;
                     devicePowerWatts = curPowerWatts;
                 }
             }
@@ -568,10 +572,10 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     // Slope mode receives newtons of resistance directly.
     if (mode == FT_SSMODE) {
         // use incoming resistanceNewtons
-    } else if (this->deviceWheelSpeed < 0.1) {
+    } else if (this->deviceSpeedMS < 0.1) {
         resistanceNewtons = 0; // avoid divide by zero
     } else {
-        resistanceNewtons = loadWatts * (s_deviceSpeedFactor / this->deviceWheelSpeed);
+        resistanceNewtons = loadWatts / this->deviceSpeedMS;
     }
 
     // Ensure that load never exceeds physical limit of device.
@@ -591,8 +595,8 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     //
     // This line caps power at low trainer speed, if you want more power
     // you should use a higher gear to drive trainer faster.
-    if (this->deviceSpeedMS <= (10 / 3.7) && deviceResistance >= 6000) {
-        deviceResistance = 1500 + (this->deviceSpeedMS * 300);
+    if (this->deviceSpeedMS <= (10 / s_kphFactorMS) && deviceResistance >= 6000) {
+        deviceResistance = 1500 + ((this->deviceSpeedMS * s_kphFactorMS) * 300);
     }
     deviceResistance = std::min<double>(SHRT_MAX, deviceResistance);
     // ------------------------------------------------------------
@@ -605,7 +609,8 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
         ERGO_Command[6] = pedalSensor;
         
         qToLittleEndian<int16_t>((int16_t)(130 * brakeCalibrationFactor + 1040), &ERGO_Command[10]);
-                
+
+        // TODO EGRO_Command and SLOPE_Command only differ by load value and flywheel... refactor                
         retCode = rawWrite(ERGO_Command, 12);
     }
     else if (mode == FT_SSMODE)
@@ -616,6 +621,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
         
         qToLittleEndian<int16_t>((int16_t)(130 * brakeCalibrationFactor + 1040), &SLOPE_Command[10]);
         
+        // TODO EGRO_Command and SLOPE_Command only differ by load value and flywheel... refactor                
         retCode = rawWrite(SLOPE_Command, 12);
         // qDebug() << "Send Gradient " << gradient << ", Weight " << weight << ", Command " << QByteArray((const char *)SLOPE_Command, 12).toHex(':');
     }

@@ -138,11 +138,11 @@ private:
     mutable QMutex pvars;
 
     // INBOUND TELEMETRY - read & write requires lock since written by run() thread
+    double deviceForceNewtons;     // current output force in Newtons
     double devicePowerWatts;       // current output power in Watts
     double deviceHeartRate;        // current heartrate in BPM
     double deviceCadence;          // current cadence in RPM
     double deviceSpeedMS;          // current speed in Meters per second (derived from wheel speed)
-    double deviceWheelSpeed;       // current wheel speed from device
     double deviceDistance;         // odometer in meters
     int    deviceButtons;          // Button status
     int    deviceStatus;           // Device status running, paused, disconnected

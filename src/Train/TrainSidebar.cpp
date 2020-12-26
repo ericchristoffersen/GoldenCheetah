@@ -2114,7 +2114,7 @@ void TrainSidebar::loadUpdate()
         if (slope == -100) {
             Stop(DEVICE_OK);
         } else {
-            foreach(int dev, activeDevices) Devices[dev].controller->setSimState(resistanceNewtons, displaySpeed, slope);
+            foreach(int dev, activeDevices) Devices[dev].controller->setGradientWithSimState(slope, resistanceNewtons, displaySpeed);
             context->notifySetNow(displayWorkoutDistance * 1000);
         }
     }
@@ -2161,7 +2161,7 @@ void TrainSidebar::toggleCalibration()
                 if (calibrationDeviceIndex == dev) {
                     Devices[dev].controller->setCalibrationState(CALIBRATION_STATE_IDLE);
                     Devices[dev].controller->setMode(RT_MODE_SPIN);
-                    Devices[dev].controller->setSimState(resistanceNewtons, displaySpeed, slope);
+                    Devices[dev].controller->setGradientWithSimState(slope, resistanceNewtons, displaySpeed);
                 }
             }
         }
@@ -2191,7 +2191,7 @@ void TrainSidebar::toggleCalibration()
                 if (status&RT_MODE_ERGO)
                     Devices[dev].controller->setLoad(0);
                 else
-                    Devices[dev].controller->setSimState(0, 0, 0);
+                    Devices[dev].controller->setGradientWithSimState(0, 0, 0);
 
 
                 Devices[dev].controller->setMode(RT_MODE_CALIBRATE);
@@ -2575,7 +2575,7 @@ void TrainSidebar::Higher()
         if (status&RT_MODE_ERGO)
             foreach(int dev, activeDevices) Devices[dev].controller->setLoad(load);
         else
-            foreach(int dev, activeDevices) Devices[dev].controller->setSimState(resistanceNewtons, displaySpeed, slope);
+            foreach(int dev, activeDevices) Devices[dev].controller->setGradientWithSimState(slope, resistanceNewtons, displaySpeed);
     }
 
     emit setNotification(tr("Increasing intensity.."), 2);
@@ -2601,7 +2601,7 @@ void TrainSidebar::Lower()
         if (status&RT_MODE_ERGO)
             foreach(int dev, activeDevices) Devices[dev].controller->setLoad(load);
         else
-            foreach(int dev, activeDevices) Devices[dev].controller->setSimState(resistanceNewtons, displaySpeed, slope);
+            foreach(int dev, activeDevices) Devices[dev].controller->setGradientWithSimState(slope, resistanceNewtons, displaySpeed);
     }
 
     emit setNotification(tr("Decreasing intensity.."), 2);

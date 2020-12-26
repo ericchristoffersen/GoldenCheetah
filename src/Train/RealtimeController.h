@@ -107,7 +107,7 @@ private:
     // not be called by simulation loop.
     virtual void setGradient(double) { return; }
 public:
-    virtual void setSimState(double, double, double gradient) { setGradient(gradient); }
+    virtual void setGradientWithSimState(double gradient, double, double) { setGradient(gradient); }
     virtual void setMode(int) { return; }
     virtual void setWindSpeed(double) { return; }
     virtual void setWeight(double) { return; }

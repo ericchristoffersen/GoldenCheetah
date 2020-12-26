@@ -18,34 +18,6 @@
 
 #include "Fortius.h"
 
-//
-// Outbound control message has the format:
-// Byte          Value / Meaning
-// 0             0x01 CONSTANT
-// 1             0x08 CONSTANT
-// 2             0x01 CONSTANT
-// 3             0x00 CONSTANT
-// 4             Brake Value - Lo Byte
-// 5             Brake Value - Hi Byte
-// 6             Echo cadence sensor
-// 7             0x00 -- UNKNOWN
-// 8             0x02 -- 0 - idle, 2 - Active, 3 - Calibration
-// 9             0x52 -- Mode 0a = ergo, weight for slope mode (48 = 72kg), 52 = idle (in conjunction with byte 8)
-// 10            Calibration Value - Lo Byte
-// 11            Calibration High - Hi Byte
-
-// Encoded Calibration is 130 x Calibration Value + 1040 so calibration of zero gives 0x0410
-
-const static uint8_t ergo_command[12] = {
-     // 0     1     2     3     4     5     6     7    8      9     10    11
-        0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x0a, 0x10, 0x04
-};
-
-const static uint8_t slope_command[12] = {
-     // 0     1     2     3     4     5     6     7    8      9     10    11
-        0x01, 0x08, 0x01, 0x00, 0x6c, 0x01, 0x00, 0x00, 0x02, 0x48, 0x10, 0x04
-};
-
 // From switchabl on FortAnt project, based on 
 //  https://github.com/totalreverse/ttyT1941/wiki#newer-usb-1264-bytes-protocol
 //
@@ -109,15 +81,6 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     powerScaleFactor = DEFAULT_SCALING;
     deviceStatus=0;
     this->parent = parent;
-
-    /* 12 byte control sequence, composed of 8 command packets
-     * where the last packet sets the load. The first byte
-     * is a CRC for the value being issued (e.g. Load in WATTS)
-     *
-     * these members are modified as load / gradient are set
-     */
-    memcpy(ERGO_Command, ergo_command, 12);
-    memcpy(SLOPE_Command, slope_command, 12);
 
     // for interacting over the USB port
     usb2 = new LibUsb(TYPE_FORTIUS);
@@ -372,7 +335,7 @@ void Fortius::run()
         return; // open failed!
     } else {
         isDeviceOpen = true;
-        sendOpenCommand();
+        sendToTrainer(Command_OPEN());
     }
 
     QTime timer;
@@ -499,7 +462,7 @@ void Fortius::run()
         if (!(curstatus&FT_RUNNING)) {
             // time to stop!
             
-            sendCloseCommand();
+            sendToTrainer(Command_CLOSE());
             
             closePort(); // need to release that file handle!!
             quit(0);
@@ -518,7 +481,7 @@ void Fortius::run()
                 return; // open failed!
             }
             isDeviceOpen = true;        
-            sendOpenCommand();
+            sendToTrainer(Command_OPEN());
                         
             timer.restart();
         }
@@ -531,31 +494,20 @@ void Fortius::run()
 }
 
 /* ----------------------------------------------------------------------
- * HIGH LEVEL DEVICE IO ROUTINES
+ * HIGH LEVEL DEVICE IO AND COMMAND ENCODING ROUTINES
  *
- * sendOpenCommand() - initialises training session
- * sendCloseCommand() - finalises training session
  * sendRunCommand(int) - update brake setpoint
  *
+ * Commmand_OPEN()         - returns message used to start device
+ * Commmand_GENERIC(...)   - returns 12 byte message to control trainer
+ *                         - common to all Command_XXX() functions below
+ * Commmand_CLOSE()        - returns message to put device in idle mode
+ * Commmand_ERGO(...)      - returns message to set ERGO resistance (no flywheel)
+ * Commmand_SLOPE(...)     - returns message to set SLOPE resistance (with flywheel)
+ * Commmand_CALIBRATE(...) - returns message to put trainer in calibration mode
+ * 
+ *
  * ---------------------------------------------------------------------- */
-int Fortius::sendOpenCommand()
-{
-
-    uint8_t open_command[] = {0x02,0x00,0x00,0x00};
-    
-    int retCode = rawWrite(open_command, 4);
-	//qDebug() << "usb status " << retCode;
-	return retCode;
-}
-
-int Fortius::sendCloseCommand()
-{
-    uint8_t close_command[] = {0x01,0x08,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x52,0x10,0x04};
-    
-    int retCode = rawWrite(close_command, 12);
-	//qDebug() << "usb status " << retCode;
-	return retCode;
-}
 
 int Fortius::sendRunCommand(int16_t pedalSensor)
 {
@@ -603,42 +555,83 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
     if (mode == FT_ERGOMODE)
     {
-		//qDebug() << "send loadWatts " << loadWatts;
-		
-        qToLittleEndian<int16_t>((int16_t)deviceResistance, &ERGO_Command[4]);
-        ERGO_Command[6] = pedalSensor;
-        
-        qToLittleEndian<int16_t>((int16_t)(130 * brakeCalibrationFactor + 1040), &ERGO_Command[10]);
-
-        // TODO EGRO_Command and SLOPE_Command only differ by load value and flywheel... refactor                
-        retCode = rawWrite(ERGO_Command, 12);
+        retCode = sendToTrainer(Command_ERGO(deviceResistance, pedalSensor, (130 * brakeCalibrationFactor + 1040)));
     }
     else if (mode == FT_SSMODE)
     {
-        qToLittleEndian<int16_t>((int16_t)deviceResistance, &SLOPE_Command[4]);
-        SLOPE_Command[6] = pedalSensor;
-        SLOPE_Command[9] = (unsigned int)weight;
-        
-        qToLittleEndian<int16_t>((int16_t)(130 * brakeCalibrationFactor + 1040), &SLOPE_Command[10]);
-        
-        // TODO EGRO_Command and SLOPE_Command only differ by load value and flywheel... refactor                
-        retCode = rawWrite(SLOPE_Command, 12);
-        // qDebug() << "Send Gradient " << gradient << ", Weight " << weight << ", Command " << QByteArray((const char *)SLOPE_Command, 12).toHex(':');
+        retCode = sendToTrainer(Command_SLOPE(deviceResistance, pedalSensor, weight, (130 * brakeCalibrationFactor + 1040)));
     }
     else if (mode == FT_IDLE)
     {
-        retCode = sendOpenCommand();
+        retCode = sendToTrainer(Command_OPEN());
     }
     else if (mode == FT_CALIBRATE)
     {
-        // Not yet implemented, easy enough to start calibration but appears that the calibration factor needs
-        // to be calculated by observing the brake power and speed after calibration starts (i.e. it's not returned
-        // by the brake).
+        retCode = sendToTrainer(Command_CALIBRATE(20 / s_kphFactorMS));
     }
 
 	//qDebug() << "usb status " << retCode;
     return retCode;
 }
+
+
+// Outbound control message has the format:
+// Byte          Value / Meaning
+// 0             0x01 CONSTANT
+// 1             0x08 CONSTANT
+// 2             0x01 CONSTANT
+// 3             0x00 CONSTANT
+// 4             Brake Value - Lo Byte
+// 5             Brake Value - Hi Byte
+// 6             Echo cadence sensor
+// 7             0x00 -- UNKNOWN
+// 8             0x02 -- 0 - idle, 2 - Active, 3 - Calibration
+// 9             0x52 -- Mode 0a = ergo, weight for slope mode (48 = 72kg), 52 = idle (in conjunction with byte 8)
+// 10            Calibration Value - Lo Byte
+// 11            Calibration High - Hi Byte
+
+// Encoded Calibration is 130 x Calibration Value + 1040 so calibration of zero gives 0x0410
+
+Fortius::ShortTrainerCommand Fortius::Command_OPEN()
+{
+    return {0x02,0x00,0x00,0x00};
+}
+
+Fortius::TrainerCommand Fortius::Command_GENERIC(uint8_t mode, uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+{
+    TrainerCommand command = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+
+    qToLittleEndian<int16_t>(resistance, &command[4]);
+
+    command[6] = pedecho;
+    command[8] = mode;
+    command[9] = weight;
+
+    qToLittleEndian<int16_t>(calibration, &command[10]);
+
+    return command;
+}
+
+Fortius::TrainerCommand Fortius::Command_CLOSE()
+{
+    return Command_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
+}
+
+Fortius::TrainerCommand Fortius::Command_ERGO(uint16_t resistance, uint8_t pedecho, uint16_t calibration)
+{
+    return Command_GENERIC(FT_MODE_ACTIVE, resistance, pedecho, 0x0a, calibration);
+}
+
+Fortius::TrainerCommand Fortius::Command_SLOPE(uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+{
+    return Command_GENERIC(FT_MODE_ACTIVE, resistance, pedecho, weight, calibration);
+}
+
+Fortius::TrainerCommand Fortius::Command_CALIBRATE(double speedMS)
+{
+    return Command_GENERIC(FT_MODE_CALIBRATE, speedMS * s_deviceSpeedFactorMS, 0, 0, 0);
+}
+
 
 /* ----------------------------------------------------------------------
  * LOW LEVEL DEVICE IO ROUTINES - PORT TO QIODEVICE REQUIRED BEFORE COMMIT
@@ -683,7 +676,7 @@ int Fortius::openPort()
     return rc;
 }
 
-int Fortius::rawWrite(uint8_t *bytes, int size) // unix!!
+int Fortius::rawWrite(const uint8_t *bytes, int size) // unix!!
 {
     return usb2->write((char *)bytes, size, FT_USB_TIMEOUT);
 }

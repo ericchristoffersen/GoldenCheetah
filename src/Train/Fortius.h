@@ -58,6 +58,10 @@
 #define FT_SSMODE      0x02
 #define FT_CALIBRATE   0x04
 
+#define FT_MODE_IDLE   0x00
+#define FT_MODE_ACTIVE 0x02
+#define FT_MODE_CALIBRATE 0x03
+
 /* Buttons */
 #define FT_PLUS        0x04
 #define FT_MINUS       0x02
@@ -78,7 +82,6 @@
 
 class Fortius : public QThread
 {
-
 public:
     Fortius(QObject *parent=0);                   // pass device
     ~Fortius();
@@ -118,18 +121,24 @@ public:
 private:
     void run();                                 // called by start to kick off the CT comtrol thread
 
-    uint8_t ERGO_Command[12],
-            SLOPE_Command[12];
-    
     // Utility and BG Thread functions
     int openPort();
     int closePort();
 
     // Protocol encoding
     int sendRunCommand(int16_t pedalSensor);
-    int sendOpenCommand();
-    int sendCloseCommand();
-    
+
+    using ShortTrainerCommand = std::array<uint8_t, 4>;
+    static ShortTrainerCommand Command_OPEN();
+
+    using TrainerCommand = std::array<uint8_t, 12>;
+    static TrainerCommand       Command_GENERIC(uint8_t mode, uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    static TrainerCommand       Command_CLOSE();
+    static TrainerCommand       Command_ERGO(uint16_t resistance, uint8_t pedecho, uint16_t calibration);
+    static TrainerCommand       Command_SLOPE(uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    static TrainerCommand       Command_CALIBRATE(double speedMS);
+
+
     // Protocol decoding
     int readMessage();
     //void unpackTelemetry(int &b1, int &b2, int &b3, int &buttons, int &type, int &value8, int &value12);
@@ -165,7 +174,13 @@ private:
     LibUsb *usb2;                   // used for USB2 support
 
     // raw device utils
-    int rawWrite(uint8_t *bytes, int size); // unix!!
+    template <std::size_t N>
+    int sendToTrainer(const std::array<uint8_t, N>& cmd)
+    {
+        return rawWrite(cmd.data(), N);
+    }
+
+    int rawWrite(const uint8_t *bytes, int size); // unix!!
     int rawRead(uint8_t *bytes, int size);  // unix!!
 };
 

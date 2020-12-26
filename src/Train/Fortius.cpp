@@ -34,38 +34,6 @@ public:
     ~Lock() { mutex.unlock(); }
 };
     
-// Provide a pair of points on device max power graph, this
-// class provides a function to tell you max force at speed.
-//
-// Only supports linear max power graph.
-//
-class MaxForceAtSpeed {
-    double m, b;
-
-public:
-
-    MaxForceAtSpeed(double ms0, double watts0, double ms1, double watts1) {
-        m = (watts1 - watts0) / (ms1 - ms0);
-        b = watts0 - (m * ms0);
-    }
-
-    double maxForce(double ms) const {
-        return (ms < 0.1) ? 0 : (m * ms + b) / ms;
-    }
-};
-
-// Using iFlow force limits because they are lowest.
-// Need ui work to support multiple devices.
-static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / s_kphFactorMS, 800);
-//static const MaxForceAtSpeed s_iVortex(0, 0, 60 / s_kphFactorMS, 900);
-//static const MaxForceAtSpeed s_iGenius(0, 0, 38 / s_kphFactorMS, 1200);
-//static const MaxForceAtSpeed s_Bushido(0, 0, 40 / s_kphFactorMS, 1200);
-
-// Ensure that force never exceeds physical limit of device.
-double LimitResistanceNewtons(double speedMS, double newtons) {
-    return std::max<double>(std::min<double>(newtons, s_iFlow.maxForce(speedMS)), -5);
-}
-
 /* ----------------------------------------------------------------------
  * CONSTRUCTOR/DESRTUCTOR
  * ---------------------------------------------------------------------- */
@@ -509,32 +477,44 @@ void Fortius::run()
  *
  * ---------------------------------------------------------------------- */
 
-int Fortius::sendRunCommand(int16_t pedalSensor)
-{
-    int retCode = 0;
+namespace {
+    // Some helper functions in anonymous namespace
+    // These are only used in Fortius::sendRunCommand(), immediately below
+    // They are the functions we will use to modify behaviour wrt accuracy, feel, limits, etc
 
-    pvars.lock();
-    int mode = this->mode;
-    double loadWatts = this->loadWatts;
-    double resistanceNewtons = this->resistanceNewtons;
-    double weight = this->weight;
-    double brakeCalibrationFactor = this->brakeCalibrationFactor;
-    pvars.unlock();
+    // ------------------------------------------------------------
+    // Provide a pair of points on device max power graph, this
+    // class provides a function to tell you max force at speed.
+    //
+    // Only supports linear max power graph.
+    //
+    class MaxForceAtSpeed {
+        double m, b;
 
-    // Slope mode receives newtons of resistance directly.
-    if (mode == FT_SSMODE) {
-        // use incoming resistanceNewtons
-    } else if (this->deviceSpeedMS < 0.1) {
-        resistanceNewtons = 0; // avoid divide by zero
-    } else {
-        resistanceNewtons = loadWatts / this->deviceSpeedMS;
+        public:
+
+        MaxForceAtSpeed(double ms0, double watts0, double ms1, double watts1) {
+            m = (watts1 - watts0) / (ms1 - ms0);
+            b = watts0 - (m * ms0);
+        }
+
+        double maxForce(double ms) const {
+            return (ms < 0.1) ? 0 : (m * ms + b) / ms;
+        }
+    };
+
+    // Using iFlow force limits because they are lowest.
+    // Need ui work to support multiple devices.
+    static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / s_kphFactorMS, 800);
+    static const MaxForceAtSpeed s_iVortex(0, 0, 60 / s_kphFactorMS, 900);
+    static const MaxForceAtSpeed s_iGenius(0, 0, 38 / s_kphFactorMS, 1200);
+    static const MaxForceAtSpeed s_Bushido(0, 0, 40 / s_kphFactorMS, 1200);
+
+    // Ensure that force never exceeds physical limit of device.
+    double LimitResistanceNewtons(double speedMS, double newtons, const MaxForceAtSpeed& model = s_iGenius) {
+        return std::max<double>(std::min<double>(newtons, model.maxForce(speedMS)), -5);
     }
 
-    // Ensure that load never exceeds physical limit of device.
-    resistanceNewtons = LimitResistanceNewtons(this->deviceSpeedMS, resistanceNewtons);
-
-    // Convert newtons to device resistance value
-    double deviceResistance = resistanceNewtons * s_newtonsToResistanceFactor;
 
     // ------------------------------------------------------------
     // TODO: Ensure this filtering is adequately handled in
@@ -545,33 +525,89 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     // The fortius power range only applies at high rpm. The device cannot
     // hold against the torque of high power at low rpm.
     //
-    // This line caps power at low trainer speed, if you want more power
+    // This function caps power at low trainer speed, if you want more power
     // you should use a higher gear to drive trainer faster.
-    if (this->deviceSpeedMS <= (10 / s_kphFactorMS) && deviceResistance >= 6000) {
-        deviceResistance = 1500 + ((this->deviceSpeedMS * s_kphFactorMS) * 300);
-    }
-    deviceResistance = std::min<double>(SHRT_MAX, deviceResistance);
-    // ------------------------------------------------------------
+    double WoutersLowSpeedLimit(double deviceSpeedMS, double requestedForceN)
+    {
+        // def __AvoidCycleOfDeath(self, Resistance):
+        //   if self.TargetMode == mode_Power and self.SpeedKmh <= 10 and Resistance >= 6000:
+        //     Resistance = int(1500 + self.SpeedKmh * 300)
 
-    if (mode == FT_ERGOMODE)
-    {
-        retCode = sendToTrainer(Command_ERGO(deviceResistance, pedalSensor, (130 * brakeCalibrationFactor + 1040)));
+        double deviceResistance     = requestedForceN * s_newtonsToResistanceFactor;
+        const double deviceSpeedKPH = deviceSpeedMS * s_kphFactorMS;
+
+        if (deviceSpeedKPH <= 10 && deviceResistance >= 6000) {
+            deviceResistance = 1500 + (deviceSpeedKPH * 300);
+        }
+
+        return deviceResistance / s_newtonsToResistanceFactor;
     }
-    else if (mode == FT_SSMODE)
+}
+
+int Fortius::sendRunCommand(int16_t pedalSensor)
+{
+    pvars.lock();
+    const int mode = this->mode;
+    const double loadWatts = this->loadWatts;
+    const double resistanceNewtons = this->resistanceNewtons;
+    const double simSpeedMS = this->simSpeedMS;
+    const double weight = this->weight;
+    const double brakeCalibrationFactor = this->brakeCalibrationFactor;
+    pvars.unlock();
+
+
+    // Ensure that load never exceeds physical limit of device.
+    const auto UpperForceLimit = [this](double forceN)
     {
-        retCode = sendToTrainer(Command_SLOPE(deviceResistance, pedalSensor, weight, (130 * brakeCalibrationFactor + 1040)));
-    }
-    else if (mode == FT_IDLE)
+        // Linear (ideal) device limit
+        forceN = LimitResistanceNewtons(this->deviceSpeedMS, forceN);
+
+        // Low-wheel-speed (empirical) device limit
+        forceN = WoutersLowSpeedLimit  (this->deviceSpeedMS, forceN);
+        return forceN;
+    };
+
+
+    // Depending on mode, send the appropriate command to the trainer
+    switch (mode)
     {
-        retCode = sendToTrainer(Command_OPEN());
-    }
-    else if (mode == FT_CALIBRATE)
-    {
-        retCode = sendToTrainer(Command_CALIBRATE(20 / s_kphFactorMS));
+        case FT_IDLE:
+            return sendToTrainer(Command_OPEN());
+
+        case FT_ERGOMODE:
+            {
+                // Trainer is being instructed to provide (loadWatts)
+                // Force (N) = Power (W) / Speed (m/s)
+                // Note: avoid divide by zero
+                const double targetForceNewtons = loadWatts / std::max(0.1, this->deviceSpeedMS);
+
+                // Send command to trainer
+                return sendToTrainer(
+                    Command_ERGO(
+                        UpperForceLimit(targetForceNewtons),
+                        pedalSensor,
+                        (130 * brakeCalibrationFactor + 1040)));
+            }
+
+        case FT_SSMODE:
+            {
+                // Slope mode receives newtons of resistance directly.    
+                // Send command to trainer
+                return sendToTrainer(
+                    Command_SLOPE(
+                        UpperForceLimit(resistanceNewtons),
+                        pedalSensor, weight,
+                        (130 * brakeCalibrationFactor + 1040)));
+            }
+
+        case FT_CALIBRATE:
+            return sendToTrainer(Command_CALIBRATE(20 / s_kphFactorMS));
+
+        default:
+            break; // error if here
     }
 
-	//qDebug() << "usb status " << retCode;
-    return retCode;
+    return 0;
 }
 
 
@@ -597,10 +633,11 @@ Fortius::ShortTrainerCommand Fortius::Command_OPEN()
     return {0x02,0x00,0x00,0x00};
 }
 
-Fortius::TrainerCommand Fortius::Command_GENERIC(uint8_t mode, uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+Fortius::TrainerCommand Fortius::Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
     TrainerCommand command = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
+    const double resistance = std::min<double>(SHRT_MAX, (forceNewtons * s_newtonsToResistanceFactor));
     qToLittleEndian<int16_t>(resistance, &command[4]);
 
     command[6] = pedecho;
@@ -617,14 +654,14 @@ Fortius::TrainerCommand Fortius::Command_CLOSE()
     return Command_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-Fortius::TrainerCommand Fortius::Command_ERGO(uint16_t resistance, uint8_t pedecho, uint16_t calibration)
+Fortius::TrainerCommand Fortius::Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
 {
-    return Command_GENERIC(FT_MODE_ACTIVE, resistance, pedecho, 0x0a, calibration);
+    return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, 0x0a, calibration);
 }
 
-Fortius::TrainerCommand Fortius::Command_SLOPE(uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+Fortius::TrainerCommand Fortius::Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
-    return Command_GENERIC(FT_MODE_ACTIVE, resistance, pedecho, weight, calibration);
+    return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, weight, calibration);
 }
 
 Fortius::TrainerCommand Fortius::Command_CALIBRATE(double speedMS)

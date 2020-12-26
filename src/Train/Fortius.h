@@ -132,10 +132,10 @@ private:
     static ShortTrainerCommand Command_OPEN();
 
     using TrainerCommand = std::array<uint8_t, 12>;
-    static TrainerCommand       Command_GENERIC(uint8_t mode, uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    static TrainerCommand       Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
     static TrainerCommand       Command_CLOSE();
-    static TrainerCommand       Command_ERGO(uint16_t resistance, uint8_t pedecho, uint16_t calibration);
-    static TrainerCommand       Command_SLOPE(uint16_t resistance, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    static TrainerCommand       Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
+    static TrainerCommand       Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
     static TrainerCommand       Command_CALIBRATE(double speedMS);
 
 

@@ -674,7 +674,7 @@ const Fortius::TrainerCommand& Fortius::Command_SLOPE(double forceNewtons, uint8
 
 const Fortius::TrainerCommand& Fortius::Command_CALIBRATE(double speedMS)
 {
-    return Command_GENERIC(FT_MODE_CALIBRATE, speedMS * s_deviceSpeedFactorMS, 0, 0, 0);
+    return Command_GENERIC(FT_MODE_CALIBRATE, speedMS, 0, 0, 0);
 }
 
 

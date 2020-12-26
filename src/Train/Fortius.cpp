@@ -542,6 +542,12 @@ namespace {
 
         return deviceResistance / s_newtonsToResistanceFactor;
     }
+
+    double MattipeeLowSpeedLimit(double speedMS, double forceN)
+    {
+        static const double Q = 9.0;
+        return std::min(forceN, Q * (speedMS*speedMS));
+    }
 }
 
 int Fortius::sendRunCommand(int16_t pedalSensor)
@@ -560,10 +566,11 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     const auto UpperForceLimit = [this](double forceN)
     {
         // Linear (ideal) device limit
-        forceN = LimitResistanceNewtons(this->deviceSpeedMS, forceN);
+        //forceN = LimitResistanceNewtons(this->deviceSpeedMS, forceN);
 
         // Low-wheel-speed (empirical) device limit
-        forceN = WoutersLowSpeedLimit  (this->deviceSpeedMS, forceN);
+        //forceN = WoutersLowSpeedLimit  (this->deviceSpeedMS, forceN);
+        forceN = MattipeeLowSpeedLimit(this->deviceSpeedMS, forceN);
         return forceN;
     };
 

@@ -628,14 +628,15 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
 // Encoded Calibration is 130 x Calibration Value + 1040 so calibration of zero gives 0x0410
 
-Fortius::ShortTrainerCommand Fortius::Command_OPEN()
+const Fortius::ShortTrainerCommand& Fortius::Command_OPEN()
 {
-    return {0x02,0x00,0x00,0x00};
+    static const ShortTrainerCommand command = {0x02,0x00,0x00,0x00};
+    return command;
 }
 
-Fortius::TrainerCommand Fortius::Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+const Fortius::TrainerCommand& Fortius::Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
-    TrainerCommand command = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    static TrainerCommand command = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
     const double resistance = std::min<double>(SHRT_MAX, (forceNewtons * s_newtonsToResistanceFactor));
     qToLittleEndian<int16_t>(resistance, &command[4]);
@@ -649,22 +650,22 @@ Fortius::TrainerCommand Fortius::Command_GENERIC(uint8_t mode, double forceNewto
     return command;
 }
 
-Fortius::TrainerCommand Fortius::Command_CLOSE()
+const Fortius::TrainerCommand& Fortius::Command_CLOSE()
 {
     return Command_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-Fortius::TrainerCommand Fortius::Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
+const Fortius::TrainerCommand& Fortius::Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
 {
     return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, 0x0a, calibration);
 }
 
-Fortius::TrainerCommand Fortius::Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+const Fortius::TrainerCommand& Fortius::Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
     return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, weight, calibration);
 }
 
-Fortius::TrainerCommand Fortius::Command_CALIBRATE(double speedMS)
+const Fortius::TrainerCommand& Fortius::Command_CALIBRATE(double speedMS)
 {
     return Command_GENERIC(FT_MODE_CALIBRATE, speedMS * s_deviceSpeedFactorMS, 0, 0, 0);
 }

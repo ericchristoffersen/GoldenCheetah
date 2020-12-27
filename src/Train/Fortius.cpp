@@ -42,12 +42,15 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     
     deviceForceNewtons = devicePowerWatts = deviceHeartRate = deviceCadence = deviceSpeedMS = 0.00;
     mode = FT_IDLE;
-    brakeCalibrationFactor = DEFAULT_CALIBRATION;
+    brakeCalibrationFactor       = DEFAULT_CALIBRATION;
     brakeCalibrationForceNewtons = DEFAULT_CALIBRATION_FORCE;
-    loadWatts = DEFAULT_LOAD;
-    gradient = DEFAULT_GRADIENT;
-    weight = DEFAULT_WEIGHT;
-    powerScaleFactor = DEFAULT_SCALING;
+    loadWatts                    = DEFAULT_LOAD;
+    gradient                     = DEFAULT_GRADIENT;
+    weight                       = DEFAULT_WEIGHT;
+    powerScaleFactor             = DEFAULT_SCALING;
+    windSpeed_ms                 = DEFAULT_WIND_SPEED;
+    rollingResistance            = DEFAULT_ROLLING_RESISTANCE;
+    windResistance               = DEFAULT_WIND_RESISTANCE;
     deviceStatus=0;
     this->parent = parent;
 
@@ -96,6 +99,28 @@ void Fortius::setWeight(double weight)
     Lock lock(pvars);
     this->weight = weight;
 }
+
+void
+Fortius::setWindSpeed(double ws)
+{
+    Lock lock(pvars);
+    this->windSpeed_ms = ws;
+}
+
+void
+Fortius::setRollingResistance(double rr)
+{
+    Lock lock(pvars);
+    this->rollingResistance = rr;
+}
+
+void
+Fortius::setWindResistance(double wr)
+{
+    Lock lock(pvars);
+    this->windResistance = wr;
+}
+
 
 void Fortius::setBrakeCalibrationForce(double val)
 {
@@ -587,13 +612,16 @@ namespace {
 int Fortius::sendRunCommand(int16_t pedalSensor)
 {
     pvars.lock();
-    const int mode = this->mode;
-    const double loadWatts = this->loadWatts;
-    const double gradient = this->gradient;
-    const double resistanceNewtons = this->resistanceNewtons;
-    const double simSpeedMS = this->simSpeedMS;
-    const double weight = this->weight;
+    const int mode                      = this->mode;
+    const double loadWatts              = this->loadWatts;
+    const double gradient               = this->gradient;
+    const double resistanceNewtons      = this->resistanceNewtons;
+    const double simSpeedMS             = this->simSpeedMS;
+    const double weight                 = this->weight;
     const double brakeCalibrationFactor = this->brakeCalibrationFactor;
+    const double windSpeed_ms           = this->windSpeed_ms;
+    const double rollingResistance      = this->rollingResistance;
+    const double windResistance         = this->windResistance;
     pvars.unlock();
 
 
@@ -665,11 +693,6 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
                     case FT_SSMODE_ALGO_NATIVE:
                         {
-                            // TODO get the next three values from FortiusController interface
-                            static const double rollingResistance = 0.004;
-                            static const double windResistance    = 0.51;
-                            static const double windSpeed_ms      = 0.0;
-
                             const double v_ms          = this->deviceSpeedMS;
 
                             const double Froll_N       = rollingResistance * weight * 9.81;

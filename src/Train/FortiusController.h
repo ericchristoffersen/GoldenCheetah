@@ -51,6 +51,9 @@ public:
     void setGradientWithSimState(double, double, double) override;
     void setMode(int);
     void setWeight(double);
+    void setWindSpeed(double);
+    void setRollingResistance(double);
+    void setWindResistance(double);
 
     // calibration
     uint8_t  getCalibrationType();

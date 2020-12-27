@@ -58,6 +58,10 @@
 #define FT_SSMODE      0x02
 #define FT_CALIBRATE   0x04
 
+#define FT_SSMODE_ALGO_NEWTONS 0x00
+#define FT_SSMODE_ALGO_V_MATCH 0x01
+#define FT_SSMODE_ALGO_NATIVE  0x02
+
 #define FT_MODE_IDLE   0x00
 #define FT_MODE_ACTIVE 0x02
 #define FT_MODE_CALIBRATE 0x03
@@ -79,6 +83,37 @@
 #define DEFAULT_SCALING      1.00
 
 #define FT_USB_TIMEOUT      500
+
+template <typename T, size_t N>
+class NSampleSmoothing
+{
+    private:
+        int nSamples = 0;
+        std::array<T, N> samples;
+        int index = 0;
+        T total = 0;
+
+    public:
+        NSampleSmoothing()
+        {
+            samples.fill(0);
+        }
+
+        void update(T newVal)
+        {
+            ++nSamples;
+
+            total += newVal - samples[index];
+            samples[index] = newVal;
+            if (++index == N) index = 0;
+        }
+
+        T get() const
+        {
+            // average if we have enough values, otherwise return latest
+            return (nSamples > N) ? (total / N) : samples[(index + (N-1))%N];
+        }
+};
 
 class Fortius : public QThread
 {
@@ -128,15 +163,12 @@ private:
     // Protocol encoding
     int sendRunCommand(int16_t pedalSensor);
 
-    using ShortTrainerCommand = std::array<uint8_t, 4>;
-    static const ShortTrainerCommand& Command_OPEN();
-
-    using TrainerCommand = std::array<uint8_t, 12>;
-    static const TrainerCommand& Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
-    static const TrainerCommand& Command_CLOSE();
-    static const TrainerCommand& Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
-    static const TrainerCommand& Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
-    static const TrainerCommand& Command_CALIBRATE(double speedMS);
+    int sendCommand_OPEN();
+    int sendCommand_CLOSE();
+    int sendCommand_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
+    int sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_CALIBRATE(double speedMS);
+    int sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
 
 
     // Protocol decoding
@@ -156,6 +188,8 @@ private:
     int    deviceButtons;          // Button status
     int    deviceStatus;           // Device status running, paused, disconnected
     int    deviceSteering;         // Steering angle
+
+    NSampleSmoothing<double, 10> smoothSpeedMS;
     
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     int    mode;
@@ -174,12 +208,6 @@ private:
     LibUsb *usb2;                   // used for USB2 support
 
     // raw device utils
-    template <std::size_t N>
-    int sendToTrainer(const std::array<uint8_t, N>& cmd)
-    {
-        return rawWrite(cmd.data(), N);
-    }
-
     int rawWrite(const uint8_t *bytes, int size); // unix!!
     int rawRead(uint8_t *bytes, int size);  // unix!!
 };

@@ -42,10 +42,11 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     
     deviceForceNewtons = devicePowerWatts = deviceHeartRate = deviceCadence = deviceSpeedMS = 0.00;
     mode = FT_IDLE;
+    brakeCalibrationFactor = DEFAULT_CALIBRATION;
+    brakeCalibrationForceNewtons = DEFAULT_CALIBRATION_FORCE;
     loadWatts = DEFAULT_LOAD;
     gradient = DEFAULT_GRADIENT;
     weight = DEFAULT_WEIGHT;
-    brakeCalibrationFactor = DEFAULT_CALIBRATION;
     powerScaleFactor = DEFAULT_SCALING;
     deviceStatus=0;
     this->parent = parent;
@@ -96,6 +97,12 @@ void Fortius::setWeight(double weight)
     this->weight = weight;
 }
 
+void Fortius::setBrakeCalibrationForce(double val)
+{
+    Lock lock(pvars);
+    this->brakeCalibrationForceNewtons = val;
+}
+
 // Load in watts when in power mode
 void Fortius::setLoad(double loadWatts)
 {
@@ -115,10 +122,11 @@ void Fortius::setGradientWithSimState(double gradient, double resistanceNewtons,
 /* ----------------------------------------------------------------------
  * GET
  * ---------------------------------------------------------------------- */
-void Fortius::getTelemetry(double &powerWatts, double &heartrate, double &cadence, double &speedKph, double &distance, int &buttons, int &steering, int &status)
+void Fortius::getTelemetry(double &powerWatts, double &forceNewtons, double &heartrate, double &cadence, double &speedKph, double &distance, int &buttons, int &steering, int &status)
 {
     Lock lock(pvars);
     powerWatts = devicePowerWatts;
+    forceNewtons = deviceForceNewtons;
     heartrate = deviceHeartRate;
     cadence = deviceCadence;
     speedKph = deviceSpeedMS * s_kphFactorMS;
@@ -155,6 +163,12 @@ double Fortius::getWeight() const
 {
     Lock lock(pvars);
     return weight;
+}
+
+double Fortius::getBrakeCalibrationForce() const
+{
+    Lock lock(pvars);
+    return this->brakeCalibrationForceNewtons;
 }
 
 double Fortius::getBrakeCalibrationFactor() const
@@ -619,8 +633,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
                 // Send command to trainer
                 return sendCommand_ERGO(
                     UpperForceLimit(targetForce_N),
-                    pedalSensor,
-                    (130 * brakeCalibrationFactor + 1040));
+                    pedalSensor);
             }
 
         case FT_SSMODE:
@@ -637,8 +650,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
                             // Send command to trainer
                             return sendCommand_SLOPE(
                                     UpperForceLimit(resistanceNewtons),
-                                    pedalSensor, weight,
-                                    (130 * brakeCalibrationFactor + 1040));
+                                    pedalSensor, weight);
                         }
 
                     case FT_SSMODE_ALGO_V_MATCH:
@@ -648,9 +660,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
                             return sendCommand_SLOPE(
                                     UpperForceLimit(targetForce_N),
-                                    pedalSensor,
-                                    weight, //deviceSpeedMS.get() < simSpeedMS ? 0x0a : weight, // freewheel of sorts
-                                    (130 * brakeCalibrationFactor + 1040));
+                                    pedalSensor, weight); //deviceSpeedMS.get() < simSpeedMS ? 0x0a : weight, // freewheel of sorts
                         }
 
                     case FT_SSMODE_ALGO_NATIVE:
@@ -670,9 +680,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
                             return sendCommand_SLOPE(
                                     UpperForceLimit(targetForce_N),
-                                    pedalSensor,
-                                    weight,
-                                    (130 * brakeCalibrationFactor + 1040));
+                                    pedalSensor, weight);
                         }
                 }
             }
@@ -712,7 +720,7 @@ int Fortius::sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pede
 {
     uint8_t command[12] = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-    const double resistance = std::min<double>(SHRT_MAX, (forceNewtons * s_newtonsToResistanceFactor));
+    const double resistance = std::min<double>(SHRT_MAX, forceNewtons);
     qToLittleEndian<int16_t>(resistance, &command[4]);
 
     command[6] = pedecho;
@@ -728,19 +736,21 @@ int Fortius::sendCommand_CLOSE()
     return sendCommand_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
+int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho)
 {
-    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, 0x0a, calibration);
+    const double calibration = (130 * brakeCalibrationFactor + (brakeCalibrationForceNewtons * s_newtonsToResistanceFactor));
+    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, 0x0a, calibration);
 }
 
-int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight)
 {
-    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, weight, calibration);
+    const double calibration = (130 * brakeCalibrationFactor + (brakeCalibrationForceNewtons * s_newtonsToResistanceFactor));
+    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, weight, calibration);
 }
 
 int Fortius::sendCommand_CALIBRATE(double speedMS)
 {
-    return sendCommand_GENERIC(FT_MODE_CALIBRATE, speedMS, 0, 0, 0);
+    return sendCommand_GENERIC(FT_MODE_CALIBRATE, speedMS * s_deviceSpeedFactorMS, 0, 0, 0);
 }
 
 

@@ -486,40 +486,6 @@ namespace {
     // They are the functions we will use to modify behaviour wrt accuracy, feel, limits, etc
 
     // ------------------------------------------------------------
-    // Provide a pair of points on device max power graph, this
-    // class provides a function to tell you max force at speed.
-    //
-    // Only supports linear max power graph.
-    //
-    class MaxForceAtSpeed {
-        double m, b;
-
-        public:
-
-        MaxForceAtSpeed(double ms0, double watts0, double ms1, double watts1) {
-            m = (watts1 - watts0) / (ms1 - ms0);
-            b = watts0 - (m * ms0);
-        }
-
-        double maxForce(double ms) const {
-            return (ms < 0.1) ? 0 : (m * ms + b) / ms;
-        }
-    };
-
-    // Using iFlow force limits because they are lowest.
-    // Need ui work to support multiple devices.
-    static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / s_kphFactorMS, 800);
-    static const MaxForceAtSpeed s_iVortex(0, 0, 60 / s_kphFactorMS, 900);
-    static const MaxForceAtSpeed s_iGenius(0, 0, 38 / s_kphFactorMS, 1200);
-    static const MaxForceAtSpeed s_Bushido(0, 0, 40 / s_kphFactorMS, 1200);
-
-    // Ensure that force never exceeds physical limit of device.
-    double LimitResistanceNewtons(double speedMS, double newtons, const MaxForceAtSpeed& model = s_iGenius) {
-        return std::max<double>(std::min<double>(newtons, model.maxForce(speedMS)), -5);
-    }
-
-
-    // ------------------------------------------------------------
     // TODO: Ensure this filtering is adequately handled in
     //       LimitResistanceNewtons function, then remove.
     //
@@ -582,9 +548,6 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
     // Ensure that load never exceeds physical limit of device.
     const auto UpperForceLimit = [deviceSpeedMS](double forceN)
     {
-        // Linear (ideal) device limit
-        //forceN = LimitResistanceNewtons(deviceSpeedMS, forceN);
-
         // Low-wheel-speed (empirical) device limit
         //forceN = WoutersLowSpeedLimit  (deviceSpeedMS, forceN);
 

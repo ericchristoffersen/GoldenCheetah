@@ -34,34 +34,34 @@ public:
 
     Fortius *myFortius;               // the device itself
 
-    int start();
-    int restart();                              // restart after paused
-    int pause();                                // pauses data collection, inbound telemetry is discarded
-    int stop();                                 // stops data collection thread
+    int start() override;
+    int restart() override;           // restart after paused
+    int pause() override;             // pauses data collection, inbound telemetry is discarded
+    int stop() override;              // stops data collection thread
 
-    bool find();
-    bool discover(QString);              // tell if a device is present at port passed
+    bool find() override;
+    bool discover(QString) override;  // tell if a device is present at port passed
 
 
     // telemetry push pull
-    bool doesPush(), doesPull(), doesLoad();
-    void getRealtimeData(RealtimeData &rtData);
-    void pushRealtimeData(RealtimeData &rtData);
-    void setLoad(double);
+    bool doesPush() override, doesPull() override, doesLoad() override;
+    void getRealtimeData(RealtimeData &rtData) override;
+    void pushRealtimeData(RealtimeData &rtData) override;
+    void setLoad(double) override;
     void setGradientWithSimState(double, double, double) override;
-    void setMode(int);
-    void setWeight(double);
-    void setWindSpeed(double);
-    void setRollingResistance(double);
-    void setWindResistance(double);
+    void setMode(int) override;
+    void setWeight(double) override;
+    void setWindSpeed(double) override;
+    void setRollingResistance(double) override;
+    void setWindResistance(double) override;
 
     // calibration
-    uint8_t  getCalibrationType();
-    double   getCalibrationTargetSpeed();
-    uint8_t  getCalibrationState();
-    void     setCalibrationState(uint8_t state);
-    uint16_t getCalibrationZeroOffset();
-    void     resetCalibrationState();
+    uint8_t  getCalibrationType() override;
+    double   getCalibrationTargetSpeed() override;
+    uint8_t  getCalibrationState() override;
+    void     setCalibrationState(uint8_t state) override;
+    uint16_t getCalibrationZeroOffset() override;
+    void     resetCalibrationState() override;
 
 private:
     uint8_t  calibrationState = CALIBRATION_STATE_IDLE;

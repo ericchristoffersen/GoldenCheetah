@@ -185,7 +185,19 @@ public:
     // GET TELEMETRY AND STATUS
     // direct access to class variables is not allowed because we need to use wait conditions
     // to sync data read/writes between the run() thread and the main gui thread
-    struct DeviceTelemetry;
+    struct DeviceTelemetry
+    {
+        double ForceNewtons;  // current output force in Newtons
+        double PowerWatts;    // current output power in Watts
+        double HeartRate;     // current heartrate in BPM
+        double Cadence;       // current cadence in RPM
+        double SpeedMS;       // current speed in Meters per second (derived from wheel speed)
+        double Distance;      // odometer in meters
+        int    Buttons;       // Button status
+        int    Steering;      // Steering angle
+
+        NSampleSmoothing<10> SmoothSpeedMS;
+    };
     DeviceTelemetry getTelemetry();
 
 private:
@@ -217,18 +229,7 @@ private:
     int deviceStatus; // must acquire pvars for read/write
     
     // INBOUND TELEMETRY - read & write requires lock since written by run() thread
-    struct DeviceTelemetry {
-        double ForceNewtons;  // current output force in Newtons
-        double PowerWatts;    // current output power in Watts
-        double HeartRate;     // current heartrate in BPM
-        double Cadence;       // current cadence in RPM
-        double SpeedMS;       // current speed in Meters per second (derived from wheel speed)
-        double Distance;      // odometer in meters
-        int    Buttons;       // Button status
-        int    Steering;      // Steering angle
-
-        NSampleSmoothing<10> SmoothSpeedMS;
-    } _device; // must acquire pvars for read/write
+    DeviceTelemetry _device; // must acquire pvars for read/write
 
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     struct ControlParameters {

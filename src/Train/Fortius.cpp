@@ -717,7 +717,7 @@ int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho)
 {
     const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
     const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe
-    const double calibration = (130 * getBrakeCalibrationFactor() + (brakeCalibrationForce_N * s_newtonsToResistanceFactor));
+    const double calibration = (130 * brakeCalibrationFactor) + (brakeCalibrationForce_N * s_newtonsToResistanceFactor);
 
     return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, 0x0a, calibration);
 }
@@ -726,7 +726,7 @@ int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t wei
 {
     const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
     const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe
-    const double calibration = (130 * brakeCalibrationFactor + (brakeCalibrationForce_N * s_newtonsToResistanceFactor));
+    const double calibration = (130 * brakeCalibrationFactor) + (brakeCalibrationForce_N * s_newtonsToResistanceFactor);
 
     return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, weight, calibration);
 }

@@ -2420,6 +2420,57 @@ void TrainSidebar::updateCalibration()
             }
             break;
 
+        case CALIBRATION_TYPE_FORTIUS:
+
+            switch (calibrationState) {
+
+            case CALIBRATION_STATE_IDLE:
+            case CALIBRATION_STATE_PENDING:
+            case CALIBRATION_STATE_REQUESTED:
+                break;
+
+            case CALIBRATION_STATE_STARTING:
+                status = QString(tr("Give the pedal a kick to start calibration...\nThe motor will run until calibration is complete."));
+                break;
+
+            case CALIBRATION_STATE_STARTED:
+                {
+                    const double calibrationPower_W = calibrationZeroOffset/137. * (calibrationTargetSpeed/*kph*//3.6);
+                    status = QString(tr("Calibrating... DO NOT PEDAL, remain seated...\nWaiting for calibration value to stabilize: %1 (%2 W @ %3 kph)"))
+                            .arg(QString::number((int16_t)calibrationZeroOffset),
+                                 QString::number((int16_t)calibrationPower_W),
+                                 QString::number((int16_t)calibrationTargetSpeed));
+                }
+                break;
+
+            case CALIBRATION_STATE_POWER:
+            case CALIBRATION_STATE_COAST:
+                break;
+
+            case CALIBRATION_STATE_SUCCESS:
+                {
+                    const double calibrationPower_W = calibrationZeroOffset/137. * (calibrationTargetSpeed/*kph*//3.6);
+                    status = QString(tr("Calibration completed successfully!\nFinal calibration value %1 (%2 W @ %3 kph)"))
+                            .arg(QString::number((int16_t)calibrationZeroOffset),
+                                 QString::number((int16_t)calibrationPower_W),
+                                 QString::number((int16_t)calibrationTargetSpeed));
+
+                    // No further ANT messages to set state, so must move ourselves on..
+                    if ((stateCount % 25) == 0)
+                        finishCalibration = true;
+                }
+                break;
+
+            case CALIBRATION_STATE_FAILURE:
+                status = QString(tr("Calibration failed! Do not pedal which calibration is taking place."));
+
+                // No further ANT messages to set state, so must move ourselves on..
+                if ((stateCount % 25) == 0)
+                    finishCalibration = true;
+                break;
+            }
+            break;
+ 
         }
 
         lastState = calibrationState;

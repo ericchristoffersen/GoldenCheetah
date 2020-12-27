@@ -51,6 +51,21 @@ public:
     void setGradientWithSimState(double, double, double) override;
     void setMode(int);
     void setWeight(double);
+
+    // calibration
+    uint8_t  getCalibrationType();
+    double   getCalibrationTargetSpeed();
+    uint8_t  getCalibrationState();
+    void     setCalibrationState(uint8_t state);
+    uint16_t getCalibrationZeroOffset();
+    void     resetCalibrationState();
+
+private:
+    uint8_t  calibrationState = CALIBRATION_STATE_IDLE;
+    NSampleSmoothing<100> calibration_values;
+
+    double getDeviceForce_N();
+    double getDeviceSpeed_kph();
 };
 
 #endif // _GC_FortiusController_h

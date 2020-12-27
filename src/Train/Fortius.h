@@ -81,37 +81,60 @@
 #define DEFAULT_WEIGHT       77
 #define DEFAULT_CALIBRATION  0.00
 #define DEFAULT_SCALING      1.00
-
+#define DEFAULT_CALIBRATION_FORCE (0x0410 / 137.)
 #define FT_USB_TIMEOUT      500
 
-template <typename T, size_t N>
+template <size_t N>
 class NSampleSmoothing
 {
     private:
-        int nSamples = 0;
-        std::array<T, N> samples;
-        int index = 0;
-        T total = 0;
+        int    nSamples   = 0;
+        double samples[N];
+        int    index      = 0;
+        double total      = 0;
+        bool   full       = false;
 
     public:
         NSampleSmoothing()
         {
-            samples.fill(0);
+            reset();
         }
 
-        void update(T newVal)
+        void reset()
+        {
+            for (int i=0; i<N; ++i)
+                samples[i] = 0.;
+            nSamples = 0;
+            index    = 0;
+            total    = 0;
+            full     = false;
+        }
+
+        void update(double newVal)
         {
             ++nSamples;
 
             total += newVal - samples[index];
             samples[index] = newVal;
-            if (++index == N) index = 0;
+            if (++index == N) { index = 0; full = true; }
         }
 
-        T get() const
+        bool is_full() const
+        {
+            return full;
+        }
+
+        double mean() const
         {
             // average if we have enough values, otherwise return latest
-            return (nSamples > N) ? (total / N) : samples[(index + (N-1))%N];
+            return total / N;//(nSamples > N) ? (total / N) : samples[(index + (N-1))%N];
+        }
+
+        double stddev() const
+        {
+            const double avg = mean();
+            const double sum_squares = std::accumulate(std::begin(samples), std::end(samples), 0.0, [avg](double acc, double sample){return acc + (sample-avg)*(sample-avg);});
+            return sqrt(sum_squares / static_cast<double>(N));
         }
 };
 
@@ -136,6 +159,7 @@ public:
     // SET
     void setLoad(double load);                  // set the load to generate in ERGOMODE
     void setGradientWithSimState(double gradient, double resistanceNewtons, double speedKph); // set the load to generate in SSMODE
+    void setBrakeCalibrationForce(double value);   // set the calibration force (N) for ERGOMODE and SSMODE
     void setBrakeCalibrationFactor(double calibrationFactor); // Impacts relationship between brake setpoint and load
     void setPowerScaleFactor(double calibrationFactor);       // Scales output power, so user can adjust to match hub or crank power meter
     void setMode(int mode);
@@ -144,6 +168,7 @@ public:
     int    getMode() const;
     double getGradient() const;
     double getLoad() const;
+    double getBrakeCalibrationForce() const;
     double getBrakeCalibrationFactor() const;
     double getPowerScaleFactor() const;
     double getWeight() const;
@@ -151,7 +176,7 @@ public:
     // GET TELEMETRY AND STATUS
     // direct access to class variables is not allowed because we need to use wait conditions
     // to sync data read/writes between the run() thread and the main gui thread
-    void getTelemetry(double &powerWatts, double &heartrate, double &cadence, double &speedKph, double &distance, int &buttons, int &steering, int &status);
+    void getTelemetry(double &powerWatts, double & forceNewtons, double &heartrate, double &cadence, double &speedKph, double &distance, int &buttons, int &steering, int &status);
 
 private:
     void run();                                 // called by start to kick off the CT comtrol thread
@@ -165,10 +190,10 @@ private:
 
     int sendCommand_OPEN();
     int sendCommand_CLOSE();
-    int sendCommand_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
-    int sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_ERGO(double forceNewtons, uint8_t pedecho);
+    int sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight);
     int sendCommand_CALIBRATE(double speedMS);
-    int sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_GENERIC(uint8_t mode, double rawForceVal, uint8_t pedecho, uint8_t weight, uint16_t calibration);
 
 
     // Protocol decoding
@@ -189,7 +214,7 @@ private:
     int    deviceStatus;           // Device status running, paused, disconnected
     int    deviceSteering;         // Steering angle
 
-    NSampleSmoothing<double, 10> smoothSpeedMS;
+    NSampleSmoothing<10> smoothSpeedMS;
     
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     int    mode;
@@ -197,9 +222,10 @@ private:
     double resistanceNewtons;      // load demanded by simulator
     double simSpeedMS;             // simulator's speed, a speed to match if possible
     double gradient;               // not used
-    double brakeCalibrationFactor;
     double powerScaleFactor;
     double weight;
+    double brakeCalibrationFactor;
+    double brakeCalibrationForceNewtons;
 
     // i/o message holder
     uint8_t buf[64];

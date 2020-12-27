@@ -389,6 +389,7 @@ void Fortius::run()
                 // speed
 
                 cur.SpeedMS = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
+                cur.SmoothSpeedMS.update(cur.SpeedMS);
 
                 // Power is torque * wheelspeed - adjusted by device resistance factor.
                 cur.ForceNewtons = qFromLittleEndian<qint16>(&buf[38]) / s_newtonsToResistanceFactor;
@@ -589,7 +590,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
 
         // My modelled device limit (TBD)
         forceN = MattipeeForceLimit(deviceSpeedMS, forceN);
-        //forceN = MattipeeForceLimit(smoothSpeedMS.get(), forceN);
+        //forceN = MattipeeForceLimit(SmoothSpeedMS.get(), forceN);
 
         return forceN;
     };

@@ -227,7 +227,7 @@ private:
         int    Buttons;       // Button status
         int    Steering;      // Steering angle
 
-        NSampleSmoothing<10> smoothSpeedMS;
+        NSampleSmoothing<10> SmoothSpeedMS;
     } _device; // must acquire pvars for read/write
 
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread

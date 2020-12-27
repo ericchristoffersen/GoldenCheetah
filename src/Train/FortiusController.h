@@ -66,9 +66,6 @@ public:
 private:
     uint8_t  calibrationState = CALIBRATION_STATE_IDLE;
     NSampleSmoothing<100> calibration_values;
-
-    double getDeviceForce_N();
-    double getDeviceSpeed_kph();
 };
 
 #endif // _GC_FortiusController_h

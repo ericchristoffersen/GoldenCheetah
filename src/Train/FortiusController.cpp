@@ -76,27 +76,23 @@ bool FortiusController::doesLoad() { return true; }
 void
 FortiusController::getRealtimeData(RealtimeData &rtData)
 {
-    // Added Distance and Steering here but yet to RealtimeData
-
-    int Buttons, Status, Steering;
-    double Power, Force, HeartRate, Cadence, Speed, Distance;
-
     if(!myFortius->isRunning())
     {
         emit setNotification(tr("Cannot Connect to Fortius"), 2);
         parent->Stop(1);
         return;
     }
+
     // get latest telemetry
-    myFortius->getTelemetry(Power, Force, HeartRate, Cadence, Speed, Distance, Buttons, Steering, Status);
+    const auto telemetry = myFortius->getTelemetry();
 
     //
     // PASS BACK TELEMETRY
     //
-    rtData.setWatts(Power);
-    rtData.setHr(HeartRate);
-    rtData.setCadence(Cadence);
-    rtData.setSpeed(Speed);
+    rtData.setWatts(telemetry.PowerWatts);
+    rtData.setHr(telemetry.HeartRate);
+    rtData.setCadence(telemetry.Cadence);
+    rtData.setSpeed(telemetry.SpeedMS * 3.6); // to kph
 
 
     // post processing, probably not used
@@ -114,16 +110,17 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
     // ignore other buttons if calibrating
     if (parent->calibrating) return;
 
+
     // ADJUST LOAD
-    if ((Buttons&FT_PLUS)) parent->Higher();
-    
-    if ((Buttons&FT_MINUS)) parent->Lower();
+    if ((telemetry.Buttons & FT_PLUS))  parent->Higher();
+    if ((telemetry.Buttons & FT_MINUS)) parent->Lower();
 
     // LAP/INTERVAL
-    if (Buttons&FT_ENTER) parent->newLap();
+    if (telemetry.Buttons & FT_ENTER)   parent->newLap();
 
     // CANCEL
-    if (Buttons&FT_CANCEL) parent->Stop(0);
+    if (telemetry.Buttons & FT_CANCEL)  parent->Stop(0);
+
 
     // Ensure we set the UI load to the actual setpoint from the fortius (as it will clamp)
     rtData.setLoad(myFortius->getLoad());
@@ -229,7 +226,7 @@ FortiusController::getCalibrationZeroOffset()
         // Waiting for use to kick pedal...
         case CALIBRATION_STATE_STARTING:
         {
-            if (getDeviceSpeed_kph() > 19.9)
+            if (myFortius->getTelemetry().SpeedMS * 3.6 > 19.9)
             {
                 calibration_values.reset();
                 calibrationState = CALIBRATION_STATE_STARTED;
@@ -244,7 +241,7 @@ FortiusController::getCalibrationZeroOffset()
             // keep running calibration until the last N values differ by less than some threshold M
 
             // Get current value and push onto the list of recent values 
-            double latest = getDeviceForce_N();
+            double latest = myFortius->getTelemetry().ForceNewtons;
 
             // unexpected resistance (pedalling) will cause calibration to terminate
             if (latest > 0)
@@ -291,23 +288,3 @@ FortiusController::resetCalibrationState()
     calibrationState = CALIBRATION_STATE_IDLE;
     myFortius->setMode(FT_IDLE);
 }
-
-// FIXME dirty pair of functions - refactor
-double
-FortiusController::getDeviceForce_N()
-{
-    double power, force, heartrate, cadence, speed, distance;
-    int buttons, steering, status;
-    myFortius->getTelemetry(power, force, heartrate, cadence, speed, distance, buttons, steering, status);
-    return force;
-}
-
-double
-FortiusController::getDeviceSpeed_kph()
-{
-    double power, force, resistance, heartrate, cadence, speed, distance;
-    int buttons, steering, status;
-    myFortius->getTelemetry(power, force, heartrate, cadence, speed, distance, buttons, steering, status);
-    return speed;
-}
-

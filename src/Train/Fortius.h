@@ -173,6 +173,7 @@ public:
     void setRollingResistance(double);          // set the rolling resistance coefficient for power calculation in SSMODE
     void setWindResistance(double);             // set the wind resistance coefficient for power calculation in SSMODE
 
+    // GET
     int    getMode() const;
     double getGradient() const;
     double getLoad() const;
@@ -184,7 +185,8 @@ public:
     // GET TELEMETRY AND STATUS
     // direct access to class variables is not allowed because we need to use wait conditions
     // to sync data read/writes between the run() thread and the main gui thread
-    void getTelemetry(double &powerWatts, double & forceNewtons, double &heartrate, double &cadence, double &speedKph, double &distance, int &buttons, int &steering, int &status);
+    struct DeviceTelemetry;
+    DeviceTelemetry getTelemetry();
 
 private:
     void run();                                 // called by start to kick off the CT comtrol thread
@@ -194,7 +196,7 @@ private:
     int closePort();
 
     // Protocol encoding
-    int sendRunCommand(int16_t pedalSensor);
+    int sendRunCommand(double deviceSpeedMS, int16_t pedalSensor);
 
     int sendCommand_OPEN();
     int sendCommand_CLOSE();
@@ -211,32 +213,39 @@ private:
     // Mutex for controlling accessing private data
     mutable QMutex pvars;
 
-    // INBOUND TELEMETRY - read & write requires lock since written by run() thread
-    double deviceForceNewtons;     // current output force in Newtons
-    double devicePowerWatts;       // current output power in Watts
-    double deviceHeartRate;        // current heartrate in BPM
-    double deviceCadence;          // current cadence in RPM
-    double deviceSpeedMS;          // current speed in Meters per second (derived from wheel speed)
-    double deviceDistance;         // odometer in meters
-    int    deviceButtons;          // Button status
-    int    deviceStatus;           // Device status running, paused, disconnected
-    int    deviceSteering;         // Steering angle
-
-    NSampleSmoothing<10> smoothSpeedMS;
+    // Device status running, paused, disconnected
+    int deviceStatus; // must acquire pvars for read/write
     
+    // INBOUND TELEMETRY - read & write requires lock since written by run() thread
+    struct DeviceTelemetry {
+        double ForceNewtons;  // current output force in Newtons
+        double PowerWatts;    // current output power in Watts
+        double HeartRate;     // current heartrate in BPM
+        double Cadence;       // current cadence in RPM
+        double SpeedMS;       // current speed in Meters per second (derived from wheel speed)
+        double Distance;      // odometer in meters
+        int    Buttons;       // Button status
+        int    Steering;      // Steering angle
+
+        NSampleSmoothing<10> smoothSpeedMS;
+    } _device; // must acquire pvars for read/write
+
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
-    int    mode;
-    double loadWatts;
-    double resistanceNewtons;      // load demanded by simulator
-    double simSpeedMS;             // simulator's speed, a speed to match if possible
-    double gradient;               // not used
-    double powerScaleFactor;
-    double weight;
-    double brakeCalibrationFactor;
-    double brakeCalibrationForceNewtons;
-    double windSpeed_ms;
-    double rollingResistance;
-    double windResistance;
+    struct ControlParameters {
+        int    mode;
+        double loadWatts;
+        double resistanceNewtons;      // load demanded by simulator
+        double simSpeedMS;             // simulator's speed, a speed to match if possible
+        double gradient;               // not used
+        double powerScaleFactor;
+        double weight;
+        double brakeCalibrationFactor;
+        double brakeCalibrationForceNewtons;
+        double windSpeed_ms;
+        double rollingResistance;
+        double windResistance;
+    } _control; // must acquire pvars for read/write
+
 
     // i/o message holder
     uint8_t buf[64];

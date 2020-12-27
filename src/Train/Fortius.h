@@ -51,7 +51,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
-#include <array>
 
 /* Device operation mode */
 #define FT_IDLE        0x00

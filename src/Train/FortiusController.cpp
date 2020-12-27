@@ -79,7 +79,7 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
     // Added Distance and Steering here but yet to RealtimeData
 
     int Buttons, Status, Steering;
-    double Power, HeartRate, Cadence, Speed, Distance;
+    double Power, Force, HeartRate, Cadence, Speed, Distance;
 
     if(!myFortius->isRunning())
     {
@@ -88,7 +88,7 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
         return;
     }
     // get latest telemetry
-    myFortius->getTelemetry(Power, HeartRate, Cadence, Speed, Distance, Buttons, Steering, Status);
+    myFortius->getTelemetry(Power, Force, HeartRate, Cadence, Speed, Distance, Buttons, Steering, Status);
 
     //
     // PASS BACK TELEMETRY
@@ -158,5 +158,138 @@ void
 FortiusController::setWeight(double weight)
 {
     myFortius->setWeight(weight);
+}
+
+
+// Calibration
+
+uint8_t
+FortiusController::getCalibrationType()
+{
+    return CALIBRATION_TYPE_FORTIUS;
+}
+
+double
+FortiusController::getCalibrationTargetSpeed()
+{
+    return 20;
+}
+
+uint8_t
+FortiusController::getCalibrationState()
+{
+    return calibrationState;
+}
+
+void
+FortiusController::setCalibrationState(uint8_t state)
+{
+    calibrationState = state;
+    switch (state)
+    {
+    case CALIBRATION_STATE_IDLE:
+        myFortius->setMode(FT_IDLE);
+        break;
+
+    case CALIBRATION_STATE_PENDING:
+        myFortius->setMode(FT_CALIBRATE);
+        calibrationState = CALIBRATION_STATE_STARTING;
+        break;
+
+    default:
+        break;
+    }
+}
+
+// I don't know if this is the right hook to use
+// or if I should be adding a new, better suited function
+uint16_t
+FortiusController::getCalibrationZeroOffset()
+{
+    switch (calibrationState)
+    {
+        // Waiting for use to kick pedal...
+        case CALIBRATION_STATE_STARTING:
+        {
+            if (getDeviceSpeed_kph() > 19.9)
+            {
+                calibration_values.reset();
+                calibrationState = CALIBRATION_STATE_STARTED;
+            }
+            return 0;
+        }
+
+        // Calibration running
+        case CALIBRATION_STATE_STARTED:
+        {
+            // keep a note of the last N calibration values
+            // keep running calibration until the last N values differ by less than some threshold M
+
+            // Get current value and push onto the list of recent values 
+            double latest = getDeviceForce_N();
+
+            // unexpected resistance (pedalling) will cause calibration to terminate
+            if (latest > 0)
+            {
+                calibrationState = CALIBRATION_STATE_FAILURE;
+                return 0;
+            }
+
+            // calculate the average
+            calibration_values.update(latest);
+            const double mean   = calibration_values.mean();
+            const double stddev = calibration_values.stddev();
+
+            // wait until stddev within threshold
+            // perhaps this isn't the best numerical solution to detect settling
+            // but it's better than the previous attempt which was based on diff(min/max)
+            // I'd prefer a tighter threshold, eg 0.02
+            // but runtime would be too long for users, especially from cold
+            static const double stddev_threshold = 0.05;
+
+            if (calibration_values.is_full() && stddev < stddev_threshold) // termination (settling) condition
+            {
+                // accept the current average as the final valibration value
+                myFortius->setBrakeCalibrationForce(-mean);
+                calibrationState = CALIBRATION_STATE_SUCCESS;
+                myFortius->setMode(FT_IDLE);
+            }
+
+            // Need to return a uint16_t, and TrainSidebar displays to user as raw value
+            return 137. * (calibration_values.is_full() ? mean : latest);
+        }
+
+        case CALIBRATION_STATE_SUCCESS:
+            return 137. * myFortius->getBrakeCalibrationForce();
+
+        default:
+            return 0;
+    }
+}
+
+void
+FortiusController::resetCalibrationState()
+{
+    calibrationState = CALIBRATION_STATE_IDLE;
+    myFortius->setMode(FT_IDLE);
+}
+
+// FIXME dirty pair of functions - refactor
+double
+FortiusController::getDeviceForce_N()
+{
+    double power, force, heartrate, cadence, speed, distance;
+    int buttons, steering, status;
+    myFortius->getTelemetry(power, force, heartrate, cadence, speed, distance, buttons, steering, status);
+    return force;
+}
+
+double
+FortiusController::getDeviceSpeed_kph()
+{
+    double power, force, resistance, heartrate, cadence, speed, distance;
+    int buttons, steering, status;
+    myFortius->getTelemetry(power, force, heartrate, cadence, speed, distance, buttons, steering, status);
+    return speed;
 }
 

@@ -76,12 +76,17 @@
 #define FT_RUNNING     0x01
 #define FT_PAUSED      0x02
 
-#define DEFAULT_LOAD         100.00
-#define DEFAULT_GRADIENT     2.00
-#define DEFAULT_WEIGHT       77
-#define DEFAULT_CALIBRATION  0.00
-#define DEFAULT_SCALING      1.00
+#define DEFAULT_LOAD               100.0
+#define DEFAULT_GRADIENT             2.0
+#define DEFAULT_WEIGHT              77
+#define DEFAULT_CALIBRATION          0.0
+#define DEFAULT_SCALING              1.0
+#define DEFAULT_WIND_SPEED           0.0
+#define DEFAULT_ROLLING_RESISTANCE   0.004
+#define DEFAULT_WIND_RESISTANCE      0.51
+
 #define DEFAULT_CALIBRATION_FORCE (0x0410 / 137.)
+
 #define FT_USB_TIMEOUT      500
 
 template <size_t N>
@@ -164,6 +169,9 @@ public:
     void setPowerScaleFactor(double calibrationFactor);       // Scales output power, so user can adjust to match hub or crank power meter
     void setMode(int mode);
     void setWeight(double weight);                 // set the total weight of rider + bike in kg's
+    void setWindSpeed(double);                  // set the wind speed for power calculation in SSMODE
+    void setRollingResistance(double);          // set the rolling resistance coefficient for power calculation in SSMODE
+    void setWindResistance(double);             // set the wind resistance coefficient for power calculation in SSMODE
 
     int    getMode() const;
     double getGradient() const;
@@ -226,6 +234,9 @@ private:
     double weight;
     double brakeCalibrationFactor;
     double brakeCalibrationForceNewtons;
+    double windSpeed_ms;
+    double rollingResistance;
+    double windResistance;
 
     // i/o message holder
     uint8_t buf[64];

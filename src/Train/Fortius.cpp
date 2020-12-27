@@ -625,9 +625,9 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
         case FT_SSMODE:
             {
-                //static const int algo = FT_SSMODE_ALGO_NEWTONS;
+                static const int algo = FT_SSMODE_ALGO_NEWTONS;
                 //static const int algo = FT_SSMODE_ALGO_V_MATCH;
-                static const int algo = FT_SSMODE_ALGO_NATIVE;
+                //static const int algo = FT_SSMODE_ALGO_NATIVE;
                 
                 switch (algo)
                 {

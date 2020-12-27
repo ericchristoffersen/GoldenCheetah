@@ -303,7 +303,7 @@ void Fortius::run()
         return; // open failed!
     } else {
         isDeviceOpen = true;
-        sendToTrainer(Command_OPEN());
+        sendCommand_OPEN();
     }
 
     QTime timer;
@@ -430,7 +430,7 @@ void Fortius::run()
         if (!(curstatus&FT_RUNNING)) {
             // time to stop!
             
-            sendToTrainer(Command_CLOSE());
+            sendCommand_CLOSE();
             
             closePort(); // need to release that file handle!!
             quit(0);
@@ -449,7 +449,7 @@ void Fortius::run()
                 return; // open failed!
             }
             isDeviceOpen = true;        
-            sendToTrainer(Command_OPEN());
+            sendCommand_OPEN();
                         
             timer.restart();
         }
@@ -466,13 +466,13 @@ void Fortius::run()
  *
  * sendRunCommand(int) - update brake setpoint
  *
- * Commmand_OPEN()         - returns message used to start device
- * Commmand_GENERIC(...)   - returns 12 byte message to control trainer
- *                         - common to all Command_XXX() functions below
- * Commmand_CLOSE()        - returns message to put device in idle mode
- * Commmand_ERGO(...)      - returns message to set ERGO resistance (no flywheel)
- * Commmand_SLOPE(...)     - returns message to set SLOPE resistance (with flywheel)
- * Commmand_CALIBRATE(...) - returns message to put trainer in calibration mode
+ * sendCommmand_OPEN()         - used to start device
+ * sendCommmand_CLOSE()        - put device in idle mode
+ * sendCommmand_ERGO(...)      - set ERGO resistance (no flywheel)
+ * sendCommmand_SLOPE(...)     - set SLOPE resistance (with flywheel)
+ * sendCommmand_CALIBRATE(...) - put trainer in calibration mode
+ * sendCommmand_GENERIC(...)   - generic message to control trainer
+ *                             - common to all but Command_OPEN() above
  * 
  *
  * ---------------------------------------------------------------------- */
@@ -579,7 +579,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     switch (mode)
     {
         case FT_IDLE:
-            return sendToTrainer(Command_OPEN());
+            return sendCommand_OPEN();
 
         case FT_ERGOMODE:
             {
@@ -589,26 +589,24 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
                 const double targetForceNewtons = loadWatts / std::max(0.1, this->deviceSpeedMS);
 
                 // Send command to trainer
-                return sendToTrainer(
-                    Command_ERGO(
-                        UpperForceLimit(targetForceNewtons),
-                        pedalSensor,
-                        (130 * brakeCalibrationFactor + 1040)));
+                return sendCommand_ERGO(
+                    UpperForceLimit(targetForceNewtons),
+                    pedalSensor,
+                    (130 * brakeCalibrationFactor + 1040));
             }
 
         case FT_SSMODE:
             {
                 // Slope mode receives newtons of resistance directly.    
                 // Send command to trainer
-                return sendToTrainer(
-                    Command_SLOPE(
-                        UpperForceLimit(resistanceNewtons),
-                        pedalSensor, weight,
-                        (130 * brakeCalibrationFactor + 1040)));
+                return sendCommand_SLOPE(
+                    UpperForceLimit(resistanceNewtons),
+                    pedalSensor, weight,
+                    (130 * brakeCalibrationFactor + 1040));
             }
 
         case FT_CALIBRATE:
-            return sendToTrainer(Command_CALIBRATE(20 / s_kphFactorMS));
+            return sendCommand_CALIBRATE(20 / s_kphFactorMS);
 
         default:
             break; // error if here
@@ -635,15 +633,15 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
 // Encoded Calibration is 130 x Calibration Value + 1040 so calibration of zero gives 0x0410
 
-const Fortius::ShortTrainerCommand& Fortius::Command_OPEN()
+int Fortius::sendCommand_OPEN()
 {
-    static const ShortTrainerCommand command = {0x02,0x00,0x00,0x00};
-    return command;
+    static const uint8_t command[4] = {0x02,0x00,0x00,0x00};
+    return rawWrite(command, 4);
 }
 
-const Fortius::TrainerCommand& Fortius::Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+int Fortius::sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
-    static TrainerCommand command = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+    uint8_t command[12] = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
     const double resistance = std::min<double>(SHRT_MAX, (forceNewtons * s_newtonsToResistanceFactor));
     qToLittleEndian<int16_t>(resistance, &command[4]);
@@ -653,28 +651,27 @@ const Fortius::TrainerCommand& Fortius::Command_GENERIC(uint8_t mode, double for
     command[9] = weight;
 
     qToLittleEndian<int16_t>(calibration, &command[10]);
-
-    return command;
+    return rawWrite(command, 12);
 }
 
-const Fortius::TrainerCommand& Fortius::Command_CLOSE()
+int Fortius::sendCommand_CLOSE()
 {
-    return Command_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
+    return sendCommand_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-const Fortius::TrainerCommand& Fortius::Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
+int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration)
 {
-    return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, 0x0a, calibration);
+    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, 0x0a, calibration);
 }
 
-const Fortius::TrainerCommand& Fortius::Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
-    return Command_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, weight, calibration);
+    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons, pedecho, weight, calibration);
 }
 
-const Fortius::TrainerCommand& Fortius::Command_CALIBRATE(double speedMS)
+int Fortius::sendCommand_CALIBRATE(double speedMS)
 {
-    return Command_GENERIC(FT_MODE_CALIBRATE, speedMS, 0, 0, 0);
+    return sendCommand_GENERIC(FT_MODE_CALIBRATE, speedMS, 0, 0, 0);
 }
 
 

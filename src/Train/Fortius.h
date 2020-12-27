@@ -128,15 +128,12 @@ private:
     // Protocol encoding
     int sendRunCommand(int16_t pedalSensor);
 
-    using ShortTrainerCommand = std::array<uint8_t, 4>;
-    static const ShortTrainerCommand& Command_OPEN();
-
-    using TrainerCommand = std::array<uint8_t, 12>;
-    static const TrainerCommand& Command_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
-    static const TrainerCommand& Command_CLOSE();
-    static const TrainerCommand& Command_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
-    static const TrainerCommand& Command_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
-    static const TrainerCommand& Command_CALIBRATE(double speedMS);
+    int sendCommand_OPEN();
+    int sendCommand_CLOSE();
+    int sendCommand_ERGO(double forceNewtons, uint8_t pedecho, uint16_t calibration);
+    int sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_CALIBRATE(double speedMS);
+    int sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration);
 
 
     // Protocol decoding
@@ -174,12 +171,6 @@ private:
     LibUsb *usb2;                   // used for USB2 support
 
     // raw device utils
-    template <std::size_t N>
-    int sendToTrainer(const std::array<uint8_t, N>& cmd)
-    {
-        return rawWrite(cmd.data(), N);
-    }
-
     int rawWrite(const uint8_t *bytes, int size); // unix!!
     int rawRead(uint8_t *bytes, int size);  // unix!!
 };

@@ -58,6 +58,10 @@
 #define FT_SSMODE      0x02
 #define FT_CALIBRATE   0x04
 
+#define FT_SSMODE_ALGO_NEWTONS 0x00
+#define FT_SSMODE_ALGO_V_MATCH 0x01
+#define FT_SSMODE_ALGO_NATIVE  0x02
+
 #define FT_MODE_IDLE   0x00
 #define FT_MODE_ACTIVE 0x02
 #define FT_MODE_CALIBRATE 0x03
@@ -79,6 +83,37 @@
 #define DEFAULT_SCALING      1.00
 
 #define FT_USB_TIMEOUT      500
+
+template <typename T, size_t N>
+class NSampleSmoothing
+{
+    private:
+        int nSamples = 0;
+        std::array<T, N> samples;
+        int index = 0;
+        T total = 0;
+
+    public:
+        NSampleSmoothing()
+        {
+            samples.fill(0);
+        }
+
+        void update(T newVal)
+        {
+            ++nSamples;
+
+            total += newVal - samples[index];
+            samples[index] = newVal;
+            if (++index == N) index = 0;
+        }
+
+        T get() const
+        {
+            // average if we have enough values, otherwise return latest
+            return (nSamples > N) ? (total / N) : samples[(index + (N-1))%N];
+        }
+};
 
 class Fortius : public QThread
 {
@@ -153,6 +188,8 @@ private:
     int    deviceButtons;          // Button status
     int    deviceStatus;           // Device status running, paused, disconnected
     int    deviceSteering;         // Steering angle
+
+    NSampleSmoothing<double, 10> smoothSpeedMS;
     
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     int    mode;

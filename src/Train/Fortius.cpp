@@ -414,6 +414,7 @@ void Fortius::run()
                     deviceHeartRate = curHeartRate;
                     deviceForceNewtons = curForceNewtons;
                     devicePowerWatts = curPowerWatts;
+                    smoothSpeedMS.update(curSpeedMS);
                 }
             }
         }
@@ -543,10 +544,29 @@ namespace {
         return deviceResistance / s_newtonsToResistanceFactor;
     }
 
-    double MattipeeLowSpeedLimit(double speedMS, double forceN)
+    double MattipeeForceLimit(double v, double F) // m/s and N
     {
-        static const double Q = 9.0;
-        return std::min(forceN, Q * (speedMS*speedMS));
+        // We think the trainer has an inherent, absolute-maximum Force limit
+        // See: https://www.qbp.com/diagrams/TechInfo/Tacx/MA9571.pdf
+        // Here we assume Fortius is like i-Genius, and has ~118N max force
+        static const double F_absmax = 118.;
+
+        // Below a certain speed, max force is no longer constant
+        // In other words, at low speeds, max power is no longer linear
+
+        // The proposed low-speed model is:
+        //   F_max_v = v^2 * Q
+        // where:
+        //   F_max_v is the maximum force we should command at speed v
+        //       v^2 is the square of the velocity (v in m/s)
+        //         Q is some constant derived empirically
+        static const double Q = 9.;
+
+        const double F_max_v = v*v * Q;
+
+        // We must never return >F_absmax
+        // We must never return >F_max_v, for current value of v
+        return std::min({F, F_max_v, F_absmax});
     }
 }
 
@@ -555,6 +575,7 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
     pvars.lock();
     const int mode = this->mode;
     const double loadWatts = this->loadWatts;
+    const double gradient = this->gradient;
     const double resistanceNewtons = this->resistanceNewtons;
     const double simSpeedMS = this->simSpeedMS;
     const double weight = this->weight;
@@ -570,7 +591,11 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
 
         // Low-wheel-speed (empirical) device limit
         //forceN = WoutersLowSpeedLimit  (this->deviceSpeedMS, forceN);
-        forceN = MattipeeLowSpeedLimit(this->deviceSpeedMS, forceN);
+
+        // My modelled device limit (TBD)
+        forceN = MattipeeForceLimit(deviceSpeedMS, forceN);
+        //forceN = MattipeeForceLimit(smoothSpeedMS.get(), forceN);
+
         return forceN;
     };
 
@@ -581,32 +606,76 @@ int Fortius::sendRunCommand(int16_t pedalSensor)
         case FT_IDLE:
             return sendCommand_OPEN();
 
+        case FT_CALIBRATE:
+            return sendCommand_CALIBRATE(20 / s_kphFactorMS);
+
         case FT_ERGOMODE:
             {
                 // Trainer is being instructed to provide (loadWatts)
                 // Force (N) = Power (W) / Speed (m/s)
                 // Note: avoid divide by zero
-                const double targetForceNewtons = loadWatts / std::max(0.1, this->deviceSpeedMS);
+                const double targetForce_N = loadWatts / std::max(0.1, this->deviceSpeedMS);
 
                 // Send command to trainer
                 return sendCommand_ERGO(
-                    UpperForceLimit(targetForceNewtons),
+                    UpperForceLimit(targetForce_N),
                     pedalSensor,
                     (130 * brakeCalibrationFactor + 1040));
             }
 
         case FT_SSMODE:
             {
-                // Slope mode receives newtons of resistance directly.    
-                // Send command to trainer
-                return sendCommand_SLOPE(
-                    UpperForceLimit(resistanceNewtons),
-                    pedalSensor, weight,
-                    (130 * brakeCalibrationFactor + 1040));
-            }
+                //static const int algo = FT_SSMODE_ALGO_NEWTONS;
+                //static const int algo = FT_SSMODE_ALGO_V_MATCH;
+                static const int algo = FT_SSMODE_ALGO_NATIVE;
+                
+                switch (algo)
+                {
+                    case FT_SSMODE_ALGO_NEWTONS:
+                        {
+                            // Slope mode receives newtons of resistance directly.    
+                            // Send command to trainer
+                            return sendCommand_SLOPE(
+                                    UpperForceLimit(resistanceNewtons),
+                                    pedalSensor, weight,
+                                    (130 * brakeCalibrationFactor + 1040));
+                        }
 
-        case FT_CALIBRATE:
-            return sendCommand_CALIBRATE(20 / s_kphFactorMS);
+                    case FT_SSMODE_ALGO_V_MATCH:
+                        {
+                            const double ratio = 1 + (deviceSpeedMS - simSpeedMS) / simSpeedMS;
+                            const double targetForce_N = resistanceNewtons * (ratio*ratio*ratio);
+
+                            return sendCommand_SLOPE(
+                                    UpperForceLimit(targetForce_N),
+                                    pedalSensor,
+                                    weight, //deviceSpeedMS.get() < simSpeedMS ? 0x0a : weight, // freewheel of sorts
+                                    (130 * brakeCalibrationFactor + 1040));
+                        }
+
+                    case FT_SSMODE_ALGO_NATIVE:
+                        {
+                            // TODO get the next three values from FortiusController interface
+                            static const double rollingResistance = 0.004;
+                            static const double windResistance    = 0.51;
+                            static const double windSpeed_ms      = 0.0;
+
+                            const double v_ms          = this->deviceSpeedMS;
+
+                            const double Froll_N       = rollingResistance * weight * 9.81;
+                            const double Fair_N        = 0.5 * windResistance * (v_ms + windSpeed_ms) * abs(v_ms + windSpeed_ms) * 1.0;
+                            const double Fslope_N      = gradient/100.0 * weight * 9.81;
+
+                            const double targetForce_N = Froll_N + Fair_N + Fslope_N;
+
+                            return sendCommand_SLOPE(
+                                    UpperForceLimit(targetForce_N),
+                                    pedalSensor,
+                                    weight,
+                                    (130 * brakeCalibrationFactor + 1040));
+                        }
+                }
+            }
 
         default:
             break; // error if here

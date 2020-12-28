@@ -212,8 +212,7 @@ private:
 
     int sendCommand_OPEN();
     int sendCommand_CLOSE();
-    int sendCommand_ERGO(double forceNewtons, uint8_t pedecho);
-    int sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight);
+    int sendCommand_RESISTANCE(double forceNewtons, uint8_t pedecho, uint8_t weight);
     int sendCommand_CALIBRATE(double speedMS);
     int sendCommand_GENERIC(uint8_t mode, double rawForceVal, uint8_t pedecho, uint8_t weight, uint16_t calibration);
 

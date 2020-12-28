@@ -469,14 +469,13 @@ void Fortius::run()
  *
  * sendRunCommand(int) - update brake setpoint
  *
- * sendCommmand_OPEN()         - used to start device
- * sendCommmand_CLOSE()        - put device in idle mode
- * sendCommmand_ERGO(...)      - set ERGO resistance (no flywheel)
- * sendCommmand_SLOPE(...)     - set SLOPE resistance (with flywheel)
- * sendCommmand_CALIBRATE(...) - put trainer in calibration mode
- * sendCommmand_GENERIC(...)   - generic message to control trainer
- *                             - common to all but Command_OPEN() above
- * 
+ * sendCommmand_OPEN()          - used to start device
+ * sendCommmand_CLOSE()         - put device in idle mode
+ * sendCommmand_RESISTANCE(...) - set trainer resistance and flywheel
+ *                              - common to ERGO and SLOPE modes
+ * sendCommmand_CALIBRATE(...)  - put trainer in calibration mode
+ * sendCommmand_GENERIC(...)    - generic message to control trainer
+ *                              - common to all but Command_OPEN() above
  *
  * ---------------------------------------------------------------------- */
 
@@ -576,9 +575,9 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                 const double targetForce_N = c.loadWatts / std::max(0.1, deviceSpeedMS);
 
                 // Send command to trainer
-                return sendCommand_ERGO(
+                return sendCommand_RESISTANCE(
                     UpperForceLimit(targetForce_N),
-                    pedalSensor);
+                    pedalSensor, 0x0a /*10kg flywheel*/);
             }
 
         case FT_SSMODE:
@@ -593,7 +592,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                         {
                             // Slope mode receives newtons of resistance directly.    
                             // Send command to trainer
-                            return sendCommand_SLOPE(
+                            return sendCommand_RESISTANCE(
                                     UpperForceLimit(c.resistanceNewtons),
                                     pedalSensor, c.weight);
                         }
@@ -603,7 +602,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                             const double ratio = 1 + (deviceSpeedMS - c.simSpeedMS) / c.simSpeedMS;
                             const double targetForce_N = c.resistanceNewtons * (ratio*ratio*ratio);
 
-                            return sendCommand_SLOPE(
+                            return sendCommand_RESISTANCE(
                                     UpperForceLimit(targetForce_N),
                                     pedalSensor, c.weight); //deviceSpeedMS.get() < c.simSpeedMS ? 0x0a : weight, // freewheel of sorts
                         }
@@ -618,7 +617,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
 
                             const double targetForce_N = Froll_N + Fair_N + Fslope_N;
 
-                            return sendCommand_SLOPE(
+                            return sendCommand_RESISTANCE(
                                     UpperForceLimit(targetForce_N),
                                     pedalSensor, c.weight);
                         }
@@ -676,16 +675,7 @@ int Fortius::sendCommand_CLOSE()
     return sendCommand_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho)
-{
-    const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
-    const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe
-    const double calibration = (130 * brakeCalibrationFactor) + (brakeCalibrationForce_N * s_newtonsToResistanceFactor);
-
-    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, 0x0a, calibration);
-}
-
-int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight)
+int Fortius::sendCommand_RESISTANCE(double forceNewtons, uint8_t pedecho, uint8_t weight)
 {
     const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
     const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe

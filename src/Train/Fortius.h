@@ -110,7 +110,6 @@ class Fortius : public QThread
 {
 private:
     enum FortiusControlStatus    { FT_RUNNING = 0x01, FT_PAUSED = 0x02 };
-    enum FortiusSlopeAlgorithm   { FT_SSMODE_ALGO_NEWTONS, FT_SSMODE_ALGO_V_MATCH, FT_SSMODE_ALGO_NATIVE };
     enum FortiusCommandModeValue { FT_MODE_IDLE = 0x00, FT_MODE_ACTIVE = 0x02, FT_MODE_CALIBRATE = 0x03 };
 
 public:
@@ -181,7 +180,7 @@ private:
     int closePort();
 
     // Protocol encoding
-    int sendRunCommand(double deviceSpeedMS, int16_t pedalSensor);
+    int sendRunCommand(double deviceSpeedMS, double smoothedSpeedMS, int16_t pedalSensor);
 
     int sendCommand_OPEN();
     int sendCommand_CLOSE();

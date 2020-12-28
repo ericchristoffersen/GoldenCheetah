@@ -52,43 +52,6 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
-/* Device operation mode */
-#define FT_IDLE        0x00
-#define FT_ERGOMODE    0x01
-#define FT_SSMODE      0x02
-#define FT_CALIBRATE   0x04
-
-#define FT_SSMODE_ALGO_NEWTONS 0x00
-#define FT_SSMODE_ALGO_V_MATCH 0x01
-#define FT_SSMODE_ALGO_NATIVE  0x02
-
-#define FT_MODE_IDLE   0x00
-#define FT_MODE_ACTIVE 0x02
-#define FT_MODE_CALIBRATE 0x03
-
-/* Buttons */
-#define FT_PLUS        0x04
-#define FT_MINUS       0x02
-#define FT_CANCEL      0x08
-#define FT_ENTER       0x01
-
-/* Control status */
-#define FT_RUNNING     0x01
-#define FT_PAUSED      0x02
-
-#define DEFAULT_LOAD               100.0
-#define DEFAULT_GRADIENT             2.0
-#define DEFAULT_WEIGHT              77
-#define DEFAULT_CALIBRATION          0.0
-#define DEFAULT_SCALING              1.0
-#define DEFAULT_WIND_SPEED           0.0
-#define DEFAULT_ROLLING_RESISTANCE   0.004
-#define DEFAULT_WIND_RESISTANCE      0.51
-
-#define DEFAULT_CALIBRATION_FORCE (0x0410 / 137.)
-
-#define FT_USB_TIMEOUT      500
-
 template <size_t N>
 class NSampleSmoothing
 {
@@ -145,7 +108,15 @@ class NSampleSmoothing
 
 class Fortius : public QThread
 {
+private:
+    enum FortiusControlStatus    { FT_RUNNING = 0x01, FT_PAUSED = 0x02 };
+    enum FortiusSlopeAlgorithm   { FT_SSMODE_ALGO_NEWTONS, FT_SSMODE_ALGO_V_MATCH, FT_SSMODE_ALGO_NATIVE };
+    enum FortiusCommandModeValue { FT_MODE_IDLE = 0x00, FT_MODE_ACTIVE = 0x02, FT_MODE_CALIBRATE = 0x03 };
+
 public:
+    enum FortiusMode    { FT_IDLE, FT_ERGOMODE, FT_SSMODE, FT_CALIBRATE };
+    enum FortiusButtons { FT_ENTER = 0x01, FT_MINUS = 0x02, FT_PLUS = 0x04, FT_CANCEL = 0x08 };
+
     Fortius(QObject *parent=0);                   // pass device
     ~Fortius();
 
@@ -254,6 +225,8 @@ private:
 
     // device port
     LibUsb *usb2;                   // used for USB2 support
+    static const int FT_USB_TIMEOUT = 500;
+
 
     // raw device utils
     int rawWrite(const uint8_t *bytes, int size); // unix!!

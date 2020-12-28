@@ -39,21 +39,21 @@ public:
  * ---------------------------------------------------------------------- */
 Fortius::Fortius(QObject *parent) : QThread(parent)
 {
+    this->parent = parent;
     
     _device.ForceNewtons = _device.PowerWatts = _device.HeartRate = _device.Cadence = _device.SpeedMS = 0.00;
     deviceStatus=0;
 
-    _control.mode = FT_IDLE;
-    _control.brakeCalibrationFactor       = DEFAULT_CALIBRATION;
-    _control.brakeCalibrationForceNewtons = DEFAULT_CALIBRATION_FORCE;
-    _control.loadWatts                    = DEFAULT_LOAD;
-    _control.gradient                     = DEFAULT_GRADIENT;
-    _control.weight                       = DEFAULT_WEIGHT;
-    _control.powerScaleFactor             = DEFAULT_SCALING;
-    _control.windSpeed_ms                 = DEFAULT_WIND_SPEED;
-    _control.rollingResistance            = DEFAULT_ROLLING_RESISTANCE;
-    _control.windResistance               = DEFAULT_WIND_RESISTANCE;
-    this->parent = parent;
+    _control.mode                         = FT_IDLE;
+    _control.brakeCalibrationFactor       = 0.0;
+    _control.brakeCalibrationForceNewtons = 7.59; //(0x0410 / 137.);
+    _control.loadWatts                    = 100.0;
+    _control.gradient                     = 2.0;
+    _control.weight                       = 77;
+    _control.powerScaleFactor             = 1.0;
+    _control.windSpeed_ms                 = 0.0;
+    _control.rollingResistance            = 0.004;
+    _control.windResistance               = 0.51;
 
     // for interacting over the USB port
     usb2 = new LibUsb(TYPE_FORTIUS);
@@ -241,7 +241,7 @@ int Fortius::restart()
     int status = deviceStatus;
 
     // what state are we in anyway?
-    if (status&FT_RUNNING && status&FT_PAUSED)
+    if (status & FT_RUNNING && status & FT_PAUSED)
     {
         status &= ~FT_PAUSED;
         deviceStatus = status;
@@ -265,8 +265,8 @@ int Fortius::pause()
     // get current status
     int status = deviceStatus;
 
-    if (status&FT_PAUSED) return 2; // already paused you muppet!
-    else if (!(status&FT_RUNNING)) return 4; // not running anyway, fool!
+    if (status & FT_PAUSED) return 2; // already paused you muppet!
+    else if (!(status & FT_RUNNING)) return 4; // not running anyway, fool!
     else {
         // ok we're running and not paused so lets pause
         status |= FT_PAUSED;

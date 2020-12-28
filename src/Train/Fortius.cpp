@@ -301,13 +301,6 @@ void Fortius::run()
     DeviceTelemetry cur = getTelemetry();
     uint8_t pedalSensor = 0;                // 1 when using is cycling else 0, fed back to brake although appears unnecessary
 
-    // we need to average out power for the last second
-    // since we get updates every 10ms (100hz)
-    int powerhist[10];     // last 10 values received
-    int powertot=0;        // running total
-    int powerindex=0;      // index into the powerhist array
-    for (int i=0; i<10; i++) powerhist[i]=0; 
-                                        
     // open the device
     if (openPort()) {
         quit(2);
@@ -367,11 +360,9 @@ void Fortius::run()
             // buf[47] varies even when the system is idle
                 
             if (actualLength >= 24) {
-                // buttons
-                cur.Buttons = buf[13];
-
-                // steering angle
-                cur.Steering = buf[18] | (buf[19] << 8);
+                cur.HeartRate    = buf[12];
+                cur.Buttons      = buf[13];
+                cur.Steering     = buf[18] | (buf[19] << 8);
             }
 
             if (actualLength >= 48) {
@@ -379,38 +370,24 @@ void Fortius::run()
                 //              status&0x01 == brake on
                 //curBrakeStatus = buf[46?];
                 
-                // pedal sensor is 0x01 when cycling
-                pedalSensor = buf[42];
+                // pedal sensor is 0x01 when crank passes sensor
+                pedalSensor      = buf[42];
                 
                 // UNUSED curDistance = (buf[28] | (buf[29] << 8) | (buf[30] << 16) | (buf[31] << 24)) / 16384.0;
 
-                cur.Cadence = buf[44];
+                cur.Cadence      = buf[44];
 				
                 // speed
 
-                cur.SpeedMS = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
+                cur.SpeedMS      = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
                 cur.SmoothSpeedMS.update(cur.SpeedMS);
 
                 // Power is torque * wheelspeed - adjusted by device resistance factor.
                 cur.ForceNewtons = qFromLittleEndian<qint16>(&buf[38]) / s_newtonsToResistanceFactor;
+                cur.PowerWatts   = cur.ForceNewtons * cur.SpeedMS;
+                cur.PowerWatts  *= getPowerScaleFactor(); // apply scale factor
 
-                cur.PowerWatts = cur.ForceNewtons * cur.SpeedMS;
-
-                { // braces, just to collect power adjustments together, visually
-                    if (cur.PowerWatts < 0.0) cur.PowerWatts = 0.0;  // brake power can be -ve when coasting. 
-                
-                    // average power over last 10 readings
-                    powertot += cur.PowerWatts;
-                    powertot -= powerhist[powerindex];
-                    powerhist[powerindex] = cur.PowerWatts;
-
-                    cur.PowerWatts = powertot / 10;
-                    powerindex = (powerindex == 9) ? 0 : powerindex+1; 
-
-                    cur.PowerWatts *= getPowerScaleFactor(); // apply scale factor
-                }
-
-                cur.HeartRate = buf[12];
+                if (cur.PowerWatts < 0.0) cur.PowerWatts = 0.0;  // brake power can be -ve when coasting. 
             }
 
             if (actualLength >= 24) // ie, if either of the two blocks above were executed

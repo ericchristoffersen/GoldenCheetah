@@ -380,7 +380,6 @@ void Fortius::run()
                 // speed
 
                 cur.SpeedMS      = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
-                cur.SmoothSpeedMS.update(cur.SpeedMS);
 
                 // Power is torque * wheelspeed - adjusted by device resistance factor.
                 cur.ForceNewtons = qFromLittleEndian<qint16>(&buf[38]) / s_newtonsToResistanceFactor;
@@ -388,6 +387,11 @@ void Fortius::run()
                 cur.PowerWatts  *= getPowerScaleFactor(); // apply scale factor
 
                 if (cur.PowerWatts < 0.0) cur.PowerWatts = 0.0;  // brake power can be -ve when coasting. 
+
+                // Smoothed values
+                cur.Smooth_SpeedMS.update(cur.SpeedMS);
+                cur.Smooth_ForceNewtons.update(cur.ForceNewtons);
+                cur.Smooth_PowerWatts = cur.Smooth_SpeedMS.mean() * cur.Smooth_ForceNewtons.mean();
             }
 
             if (actualLength >= 24) // ie, if either of the two blocks above were executed

@@ -196,7 +196,9 @@ public:
         int    Buttons;       // Button status
         int    Steering;      // Steering angle
 
-        NSampleSmoothing<10> SmoothSpeedMS;
+        NSampleSmoothing<10> Smooth_SpeedMS;
+        NSampleSmoothing<10> Smooth_ForceNewtons;
+        double Smooth_PowerWatts;
     };
     DeviceTelemetry getTelemetry();
 

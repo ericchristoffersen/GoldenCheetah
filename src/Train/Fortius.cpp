@@ -18,13 +18,13 @@
 
 #include "Fortius.h"
 
-// From switchabl on FortAnt project, based on 
+// From switchabl on FortAnt project, based on
 //  https://github.com/totalreverse/ttyT1941/wiki#newer-usb-1264-bytes-protocol
 //
 // Power resistance factor is 137 * 289.75 * 3.6 ~= 142905
 static const double s_kphFactorMS = 3.6;
 static const double s_newtonsToResistanceFactor = 137;
-static const double s_deviceSpeedFactorMS = 289.75 * s_kphFactorMS; 
+static const double s_deviceSpeedFactorMS = 289.75 * s_kphFactorMS;
 
 class Lock
 {
@@ -33,27 +33,27 @@ public:
     Lock(QMutex& m) : mutex(m) { mutex.lock(); }
     ~Lock() { mutex.unlock(); }
 };
-    
+
 /* ----------------------------------------------------------------------
  * CONSTRUCTOR/DESRTUCTOR
  * ---------------------------------------------------------------------- */
 Fortius::Fortius(QObject *parent) : QThread(parent)
 {
-    
+    this->parent = parent;
+
     _device.ForceNewtons = _device.PowerWatts = _device.HeartRate = _device.Cadence = _device.SpeedMS = 0.00;
     deviceStatus=0;
 
-    _control.mode = FT_IDLE;
-    _control.brakeCalibrationFactor       = DEFAULT_CALIBRATION;
-    _control.brakeCalibrationForceNewtons = DEFAULT_CALIBRATION_FORCE;
-    _control.loadWatts                    = DEFAULT_LOAD;
-    _control.gradient                     = DEFAULT_GRADIENT;
-    _control.weight                       = DEFAULT_WEIGHT;
-    _control.powerScaleFactor             = DEFAULT_SCALING;
-    _control.windSpeed_ms                 = DEFAULT_WIND_SPEED;
-    _control.rollingResistance            = DEFAULT_ROLLING_RESISTANCE;
-    _control.windResistance               = DEFAULT_WIND_RESISTANCE;
-    this->parent = parent;
+    _control.mode                         = FT_IDLE;
+    _control.brakeCalibrationFactor       = 0.0;
+    _control.brakeCalibrationForceNewtons = 7.59; //(0x0410 / 137.);
+    _control.loadWatts                    = 100.0;
+    _control.gradient                     = 2.0;
+    _control.weight                       = 77;
+    _control.powerScaleFactor             = 1.0;
+    _control.windSpeed_ms                 = 0.0;
+    _control.rollingResistance            = 0.004;
+    _control.windResistance               = 0.51;
 
     // for interacting over the USB port
     usb2 = new LibUsb(TYPE_FORTIUS);
@@ -85,7 +85,7 @@ void Fortius::setPowerScaleFactor(double powerScaleFactor)
 {
     if (powerScaleFactor < 0.8) powerScaleFactor = 0.8;
     if (powerScaleFactor > 1.2) powerScaleFactor = 1.2;
-    
+
     Lock lock(pvars);
     _control.powerScaleFactor = powerScaleFactor;
 }
@@ -96,7 +96,7 @@ void Fortius::setWeight(double weight)
     // need to apply range as same byte used to signify erg mode
     if (weight < 50) weight = 50;
     if (weight > 120) weight = 120;
-        
+
     Lock lock(pvars);
     _control.weight = weight;
 }
@@ -153,7 +153,7 @@ Fortius::DeviceTelemetry Fortius::getTelemetry()
     Lock lock(pvars);
     auto copy = _device;
 
-    // work around to ensure controller doesn't miss button press. 
+    // work around to ensure controller doesn't miss button press.
     // The run thread will only set the button bits, they don't get
     // reset until the ui reads the device state
     _device.Buttons = 0;
@@ -241,7 +241,7 @@ int Fortius::restart()
     int status = deviceStatus;
 
     // what state are we in anyway?
-    if (status&FT_RUNNING && status&FT_PAUSED)
+    if (status & FT_RUNNING && status & FT_PAUSED)
     {
         status &= ~FT_PAUSED;
         deviceStatus = status;
@@ -265,8 +265,8 @@ int Fortius::pause()
     // get current status
     int status = deviceStatus;
 
-    if (status&FT_PAUSED) return 2; // already paused you muppet!
-    else if (!(status&FT_RUNNING)) return 4; // not running anyway, fool!
+    if (status & FT_PAUSED) return 2; // already paused you muppet!
+    else if (!(status & FT_RUNNING)) return 4; // not running anyway, fool!
     else {
         // ok we're running and not paused so lets pause
         status |= FT_PAUSED;
@@ -301,13 +301,6 @@ void Fortius::run()
     DeviceTelemetry cur = getTelemetry();
     uint8_t pedalSensor = 0;                // 1 when using is cycling else 0, fed back to brake although appears unnecessary
 
-    // we need to average out power for the last second
-    // since we get updates every 10ms (100hz)
-    int powerhist[10];     // last 10 values received
-    int powertot=0;        // running total
-    int powerindex=0;      // index into the powerhist array
-    for (int i=0; i<10; i++) powerhist[i]=0; 
-                                        
     // open the device
     if (openPort()) {
         quit(2);
@@ -324,19 +317,19 @@ void Fortius::run()
 
         if (isDeviceOpen == true) {
 
-			int rc = sendRunCommand(cur.SpeedMS, pedalSensor) ;
-			if (rc < 0) {
-				qDebug() << "usb write error " << rc;
-				// send failed - ouch!
-				closePort(); // need to release that file handle!!
-				quit(4);
-        		return; // couldn't write to the device
-			}
-			
+            int rc = sendRunCommand(cur.SpeedMS, pedalSensor) ;
+            if (rc < 0) {
+                qDebug() << "usb write error " << rc;
+                // send failed - ouch!
+                closePort(); // need to release that file handle!!
+                quit(4);
+                return; // couldn't write to the device
+            }
+
             int actualLength = readMessage();
-			if (actualLength < 0) {
-				qDebug() << "usb read error " << actualLength;
-			}
+            if (actualLength < 0) {
+                qDebug() << "usb read error " << actualLength;
+            }
 
             //----------------------------------------------------------------
             // UPDATE BASIC TELEMETRY (HR, CAD, SPD et al)
@@ -365,52 +358,40 @@ void Fortius::run()
             // buf[44, 45] cadence
             // buf[46] is 0x02 when active, 0x00 at the end
             // buf[47] varies even when the system is idle
-                
-            if (actualLength >= 24) {
-                // buttons
-                cur.Buttons = buf[13];
 
-                // steering angle
-                cur.Steering = buf[18] | (buf[19] << 8);
+            if (actualLength >= 24) {
+                cur.HeartRate    = buf[12];
+                cur.Buttons      = buf[13];
+                cur.Steering     = buf[18] | (buf[19] << 8);
             }
 
             if (actualLength >= 48) {
                 // brake status status&0x04 == stopping wheel
                 //              status&0x01 == brake on
                 //curBrakeStatus = buf[46?];
-                
-                // pedal sensor is 0x01 when cycling
-                pedalSensor = buf[42];
-                
+
+                // pedal sensor is 0x01 when crank passes sensor
+                pedalSensor      = buf[42];
+
                 // UNUSED curDistance = (buf[28] | (buf[29] << 8) | (buf[30] << 16) | (buf[31] << 24)) / 16384.0;
 
-                cur.Cadence = buf[44];
-				
+                cur.Cadence      = buf[44];
+
                 // speed
 
-                cur.SpeedMS = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
-                cur.SmoothSpeedMS.update(cur.SpeedMS);
+                cur.SpeedMS      = qFromLittleEndian<quint16>(&buf[32]) / s_deviceSpeedFactorMS;
 
                 // Power is torque * wheelspeed - adjusted by device resistance factor.
                 cur.ForceNewtons = qFromLittleEndian<qint16>(&buf[38]) / s_newtonsToResistanceFactor;
+                cur.PowerWatts   = cur.ForceNewtons * cur.SpeedMS;
+                cur.PowerWatts  *= getPowerScaleFactor(); // apply scale factor
 
-                cur.PowerWatts = cur.ForceNewtons * cur.SpeedMS;
+                if (cur.PowerWatts < 0.0) cur.PowerWatts = 0.0;  // brake power can be -ve when coasting.
 
-                { // braces, just to collect power adjustments together, visually
-                    if (cur.PowerWatts < 0.0) cur.PowerWatts = 0.0;  // brake power can be -ve when coasting. 
-                
-                    // average power over last 10 readings
-                    powertot += cur.PowerWatts;
-                    powertot -= powerhist[powerindex];
-                    powerhist[powerindex] = cur.PowerWatts;
-
-                    cur.PowerWatts = powertot / 10;
-                    powerindex = (powerindex == 9) ? 0 : powerindex+1; 
-
-                    cur.PowerWatts *= getPowerScaleFactor(); // apply scale factor
-                }
-
-                cur.HeartRate = buf[12];
+                // Smoothed values
+                cur.Smooth_SpeedMS.update(cur.SpeedMS);
+                cur.Smooth_ForceNewtons.update(cur.ForceNewtons);
+                cur.Smooth_PowerWatts = cur.Smooth_SpeedMS.mean() * cur.Smooth_ForceNewtons.mean();
             }
 
             if (actualLength >= 24) // ie, if either of the two blocks above were executed
@@ -432,16 +413,16 @@ void Fortius::run()
         /* time to shut up shop */
         if (!(curstatus & FT_RUNNING)) {
             // time to stop!
-            
+
             sendCommand_CLOSE();
-            
+
             closePort(); // need to release that file handle!!
             quit(0);
             return;
         }
 
         if ((curstatus & FT_PAUSED) && isDeviceOpen == true) {
-        
+
             closePort();
             isDeviceOpen = false;
 
@@ -451,13 +432,13 @@ void Fortius::run()
                 quit(2);
                 return; // open failed!
             }
-            isDeviceOpen = true;        
+            isDeviceOpen = true;
             sendCommand_OPEN();
-                        
+
             timer.restart();
         }
 
-        
+
         // The controller updates faster than the brake. Setting this to a low value (<50ms) increases the frequency of controller
         // only packages (24byte). Tacx software uses 100ms.
         msleep(50);
@@ -469,14 +450,13 @@ void Fortius::run()
  *
  * sendRunCommand(int) - update brake setpoint
  *
- * sendCommmand_OPEN()         - used to start device
- * sendCommmand_CLOSE()        - put device in idle mode
- * sendCommmand_ERGO(...)      - set ERGO resistance (no flywheel)
- * sendCommmand_SLOPE(...)     - set SLOPE resistance (with flywheel)
- * sendCommmand_CALIBRATE(...) - put trainer in calibration mode
- * sendCommmand_GENERIC(...)   - generic message to control trainer
- *                             - common to all but Command_OPEN() above
- * 
+ * sendCommmand_OPEN()          - used to start device
+ * sendCommmand_CLOSE()         - put device in idle mode
+ * sendCommmand_RESISTANCE(...) - set trainer resistance and flywheel
+ *                              - common to ERGO and SLOPE modes
+ * sendCommmand_CALIBRATE(...)  - put trainer in calibration mode
+ * sendCommmand_GENERIC(...)    - generic message to control trainer
+ *                              - common to all but Command_OPEN() above
  *
  * ---------------------------------------------------------------------- */
 
@@ -484,40 +464,6 @@ namespace {
     // Some helper functions in anonymous namespace
     // These are only used in Fortius::sendRunCommand(), immediately below
     // They are the functions we will use to modify behaviour wrt accuracy, feel, limits, etc
-
-    // ------------------------------------------------------------
-    // Provide a pair of points on device max power graph, this
-    // class provides a function to tell you max force at speed.
-    //
-    // Only supports linear max power graph.
-    //
-    class MaxForceAtSpeed {
-        double m, b;
-
-        public:
-
-        MaxForceAtSpeed(double ms0, double watts0, double ms1, double watts1) {
-            m = (watts1 - watts0) / (ms1 - ms0);
-            b = watts0 - (m * ms0);
-        }
-
-        double maxForce(double ms) const {
-            return (ms < 0.1) ? 0 : (m * ms + b) / ms;
-        }
-    };
-
-    // Using iFlow force limits because they are lowest.
-    // Need ui work to support multiple devices.
-    static const MaxForceAtSpeed s_iFlow  (0, 0, 60 / s_kphFactorMS, 800);
-    static const MaxForceAtSpeed s_iVortex(0, 0, 60 / s_kphFactorMS, 900);
-    static const MaxForceAtSpeed s_iGenius(0, 0, 38 / s_kphFactorMS, 1200);
-    static const MaxForceAtSpeed s_Bushido(0, 0, 40 / s_kphFactorMS, 1200);
-
-    // Ensure that force never exceeds physical limit of device.
-    double LimitResistanceNewtons(double speedMS, double newtons, const MaxForceAtSpeed& model = s_iGenius) {
-        return std::max<double>(std::min<double>(newtons, model.maxForce(speedMS)), -5);
-    }
-
 
     // ------------------------------------------------------------
     // TODO: Ensure this filtering is adequately handled in
@@ -582,9 +528,6 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
     // Ensure that load never exceeds physical limit of device.
     const auto UpperForceLimit = [deviceSpeedMS](double forceN)
     {
-        // Linear (ideal) device limit
-        //forceN = LimitResistanceNewtons(deviceSpeedMS, forceN);
-
         // Low-wheel-speed (empirical) device limit
         //forceN = WoutersLowSpeedLimit  (deviceSpeedMS, forceN);
 
@@ -613,9 +556,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                 const double targetForce_N = c.loadWatts / std::max(0.1, deviceSpeedMS);
 
                 // Send command to trainer
-                return sendCommand_ERGO(
-                    UpperForceLimit(targetForce_N),
-                    pedalSensor);
+                return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, 0x0a /*10kg flywheel*/);
             }
 
         case FT_SSMODE:
@@ -623,16 +564,14 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                 static const int algo = FT_SSMODE_ALGO_NEWTONS;
                 //static const int algo = FT_SSMODE_ALGO_V_MATCH;
                 //static const int algo = FT_SSMODE_ALGO_NATIVE;
-                
+
                 switch (algo)
                 {
                     case FT_SSMODE_ALGO_NEWTONS:
                         {
-                            // Slope mode receives newtons of resistance directly.    
+                            // Slope mode receives newtons of resistance directly.
                             // Send command to trainer
-                            return sendCommand_SLOPE(
-                                    UpperForceLimit(c.resistanceNewtons),
-                                    pedalSensor, c.weight);
+                            return sendCommand_RESISTANCE(UpperForceLimit(c.resistanceNewtons), pedalSensor, c.weight);
                         }
 
                     case FT_SSMODE_ALGO_V_MATCH:
@@ -640,9 +579,8 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
                             const double ratio = 1 + (deviceSpeedMS - c.simSpeedMS) / c.simSpeedMS;
                             const double targetForce_N = c.resistanceNewtons * (ratio*ratio*ratio);
 
-                            return sendCommand_SLOPE(
-                                    UpperForceLimit(targetForce_N),
-                                    pedalSensor, c.weight); //deviceSpeedMS.get() < c.simSpeedMS ? 0x0a : weight, // freewheel of sorts
+                            return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, c.weight);
+                            //deviceSpeedMS.get() < c.simSpeedMS ? 0x0a : weight, // freewheel of sorts?
                         }
 
                     case FT_SSMODE_ALGO_NATIVE:
@@ -655,9 +593,7 @@ int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
 
                             const double targetForce_N = Froll_N + Fair_N + Fslope_N;
 
-                            return sendCommand_SLOPE(
-                                    UpperForceLimit(targetForce_N),
-                                    pedalSensor, c.weight);
+                            return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, c.weight);
                         }
                 }
             }
@@ -713,16 +649,7 @@ int Fortius::sendCommand_CLOSE()
     return sendCommand_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }
 
-int Fortius::sendCommand_ERGO(double forceNewtons, uint8_t pedecho)
-{
-    const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
-    const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe
-    const double calibration = (130 * brakeCalibrationFactor) + (brakeCalibrationForce_N * s_newtonsToResistanceFactor);
-
-    return sendCommand_GENERIC(FT_MODE_ACTIVE, forceNewtons * s_newtonsToResistanceFactor, pedecho, 0x0a, calibration);
-}
-
-int Fortius::sendCommand_SLOPE(double forceNewtons, uint8_t pedecho, uint8_t weight)
+int Fortius::sendCommand_RESISTANCE(double forceNewtons, uint8_t pedecho, uint8_t weight)
 {
     const double brakeCalibrationFactor = getBrakeCalibrationFactor(); // thread-safe
     const double brakeCalibrationForce_N = getBrakeCalibrationForce(); // thread-safe
@@ -753,7 +680,7 @@ int Fortius::readMessage()
     int rc;
 
     rc = rawRead(buf, 64);
-	//qDebug() << "usb status " << rc;
+    //qDebug() << "usb status " << rc;
     return rc;
 }
 
@@ -765,18 +692,18 @@ int Fortius::closePort()
 
 bool Fortius::find()
 {
-	int rc;
+    int rc;
     rc = usb2->find();
-	//qDebug() << "usb status " << rc;
+    //qDebug() << "usb status " << rc;
     return rc;
 }
 
 int Fortius::openPort()
 {
-	int rc;
+    int rc;
     // on windows we try on USB2 then on USB1 then fail...
     rc = usb2->open();
-	//qDebug() << "usb status " << rc;
+    //qDebug() << "usb status " << rc;
     return rc;
 }
 

@@ -112,14 +112,14 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
 
 
     // ADJUST LOAD
-    if ((telemetry.Buttons & FT_PLUS))  parent->Higher();
-    if ((telemetry.Buttons & FT_MINUS)) parent->Lower();
+    if (telemetry.Buttons & Fortius::FT_PLUS)   parent->Higher();
+    if (telemetry.Buttons & Fortius::FT_MINUS)  parent->Lower();
 
     // LAP/INTERVAL
-    if (telemetry.Buttons & FT_ENTER)   parent->newLap();
+    if (telemetry.Buttons & Fortius::FT_ENTER)  parent->newLap();
 
     // CANCEL
-    if (telemetry.Buttons & FT_CANCEL)  parent->Stop(0);
+    if (telemetry.Buttons & Fortius::FT_CANCEL) parent->Stop(0);
 
 
     // Ensure we set the UI load to the actual setpoint from the fortius (as it will clamp)
@@ -144,10 +144,10 @@ FortiusController::setGradientWithSimState(double gradient, double resistanceNew
 void
 FortiusController::setMode(int mode)
 {
-    if (mode == RT_MODE_ERGO) mode = FT_ERGOMODE;
-    else if (mode == RT_MODE_SPIN) mode = FT_SSMODE;
-    else mode = FT_IDLE;
-    
+    if (mode == RT_MODE_ERGO) mode = Fortius::FT_ERGOMODE;
+    else if (mode == RT_MODE_SPIN) mode = Fortius::FT_SSMODE;
+    else mode = Fortius::FT_IDLE;
+
     myFortius->setMode(mode);
 }
 
@@ -203,11 +203,11 @@ FortiusController::setCalibrationState(uint8_t state)
     switch (state)
     {
     case CALIBRATION_STATE_IDLE:
-        myFortius->setMode(FT_IDLE);
+        myFortius->setMode(Fortius::FT_IDLE);
         break;
 
     case CALIBRATION_STATE_PENDING:
-        myFortius->setMode(FT_CALIBRATE);
+        myFortius->setMode(Fortius::FT_CALIBRATE);
         calibrationState = CALIBRATION_STATE_STARTING;
         break;
 
@@ -240,7 +240,7 @@ FortiusController::getCalibrationZeroOffset()
             // keep a note of the last N calibration values
             // keep running calibration until the last N values differ by less than some threshold M
 
-            // Get current value and push onto the list of recent values 
+            // Get current value and push onto the list of recent values
             double latest = myFortius->getTelemetry().ForceNewtons;
 
             // unexpected resistance (pedalling) will cause calibration to terminate
@@ -267,7 +267,7 @@ FortiusController::getCalibrationZeroOffset()
                 // accept the current average as the final valibration value
                 myFortius->setBrakeCalibrationForce(-mean);
                 calibrationState = CALIBRATION_STATE_SUCCESS;
-                myFortius->setMode(FT_IDLE);
+                myFortius->setMode(Fortius::FT_IDLE);
             }
 
             // Need to return a uint16_t, and TrainSidebar displays to user as raw value
@@ -286,5 +286,5 @@ void
 FortiusController::resetCalibrationState()
 {
     calibrationState = CALIBRATION_STATE_IDLE;
-    myFortius->setMode(FT_IDLE);
+    myFortius->setMode(Fortius::FT_IDLE);
 }

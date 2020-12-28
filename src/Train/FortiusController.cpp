@@ -89,7 +89,7 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
     //
     // PASS BACK TELEMETRY
     //
-    rtData.setWatts(telemetry.PowerWatts);
+    rtData.setWatts(telemetry.Smooth_PowerWatts);
     rtData.setHr(telemetry.HeartRate);
     rtData.setCadence(telemetry.Cadence);
     rtData.setSpeed(telemetry.SpeedMS * 3.6); // to kph

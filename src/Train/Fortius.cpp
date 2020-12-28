@@ -317,7 +317,7 @@ void Fortius::run()
 
         if (isDeviceOpen == true) {
 
-            int rc = sendRunCommand(cur.SpeedMS, pedalSensor) ;
+            int rc = sendRunCommand(cur.SpeedMS, cur.Smooth_SpeedMS.mean(), pedalSensor) ;
             if (rc < 0) {
                 qDebug() << "usb write error " << rc;
                 // send failed - ouch!
@@ -461,38 +461,7 @@ void Fortius::run()
  * ---------------------------------------------------------------------- */
 
 namespace {
-    // Some helper functions in anonymous namespace
-    // These are only used in Fortius::sendRunCommand(), immediately below
-    // They are the functions we will use to modify behaviour wrt accuracy, feel, limits, etc
-
-    // ------------------------------------------------------------
-    // TODO: Ensure this filtering is adequately handled in
-    //       LimitResistanceNewtons function, then remove.
-    //
-    // FortiusAnt Speed Sensitive Resistance Limits.
-    //
-    // The fortius power range only applies at high rpm. The device cannot
-    // hold against the torque of high power at low rpm.
-    //
-    // This function caps power at low trainer speed, if you want more power
-    // you should use a higher gear to drive trainer faster.
-    double WoutersLowSpeedLimit(double deviceSpeedMS, double requestedForceN)
-    {
-        // def __AvoidCycleOfDeath(self, Resistance):
-        //   if self.TargetMode == mode_Power and self.SpeedKmh <= 10 and Resistance >= 6000:
-        //     Resistance = int(1500 + self.SpeedKmh * 300)
-
-        double deviceResistance     = requestedForceN * s_newtonsToResistanceFactor;
-        const double deviceSpeedKPH = deviceSpeedMS * s_kphFactorMS;
-
-        if (deviceSpeedKPH <= 10 && deviceResistance >= 6000) {
-            deviceResistance = 1500 + (deviceSpeedKPH * 300);
-        }
-
-        return deviceResistance / s_newtonsToResistanceFactor;
-    }
-
-    double MattipeeForceLimit(double v, double F) // m/s and N
+    double UpperForceLimit(double v, double F) // m/s and N
     {
         // We think the trainer has an inherent, absolute-maximum Force limit
         // See: https://www.qbp.com/diagrams/TechInfo/Tacx/MA9571.pdf
@@ -518,91 +487,64 @@ namespace {
     }
 }
 
-int Fortius::sendRunCommand(double deviceSpeedMS, int16_t pedalSensor)
+int Fortius::sendRunCommand(double deviceSpeedMS, double smoothSpeedMS, int16_t pedalSensor)
 {
     pvars.lock();
     const ControlParameters c = _control; // local copy
     pvars.unlock();
 
-
-    // Ensure that load never exceeds physical limit of device.
-    const auto UpperForceLimit = [deviceSpeedMS](double forceN)
-    {
-        // Low-wheel-speed (empirical) device limit
-        //forceN = WoutersLowSpeedLimit  (deviceSpeedMS, forceN);
-
-        // My modelled device limit (TBD)
-        forceN = MattipeeForceLimit(deviceSpeedMS, forceN);
-        //forceN = MattipeeForceLimit(SmoothSpeedMS.get(), forceN);
-
-        return forceN;
-    };
-
-
     // Depending on mode, send the appropriate command to the trainer
-    switch (c.mode)
+    if (c.mode == FT_IDLE)
+        return sendCommand_OPEN();
+
+    if (c.mode == FT_CALIBRATE)
+        return sendCommand_CALIBRATE(20 / s_kphFactorMS);
+
+
+    // Below here, device is being used in resistance mode
+    // Any mode or algorithm used:
+    //  - MUST set the target force
+    //  - MAY override the default configured flywheel weight
+    // A command is then sent to the trainer at the end of this function
+
+    uint8_t weight_kg     = c.weight;
+    double  targetForce_N = 0;
+
+    if (c.mode == FT_ERGOMODE)
     {
-        case FT_IDLE:
-            return sendCommand_OPEN();
+        // Force (N) = Power (W) / Speed (m/s)
+        // Note: avoid divide by zero
+        targetForce_N = c.loadWatts / std::max(0.1, deviceSpeedMS);
+        weight_kg     = 0x0a; // 10kg flywheel
+    }
+    else // FT_SSMODE
+    {
+        if (false)
+        {
+            const double ratio = 1 + (deviceSpeedMS - c.simSpeedMS) / c.simSpeedMS;
 
-        case FT_CALIBRATE:
-            return sendCommand_CALIBRATE(20 / s_kphFactorMS);
+            targetForce_N = c.resistanceNewtons * (ratio*ratio*ratio);
+        }
+        else if (false)
+        {
+            const double v_ms     = deviceSpeedMS;
 
-        case FT_ERGOMODE:
-            {
-                // Trainer is being instructed to provide (loadWatts)
-                // Force (N) = Power (W) / Speed (m/s)
-                // Note: avoid divide by zero
-                const double targetForce_N = c.loadWatts / std::max(0.1, deviceSpeedMS);
+            const double Froll_N  = c.rollingResistance * c.weight * 9.81;
+            const double Fair_N   = 0.5 * c.windResistance * (v_ms + c.windSpeed_ms) * abs(v_ms + c.windSpeed_ms) * 1.0;
+            const double Fslope_N = c.gradient/100.0 * c.weight * 9.81;
 
-                // Send command to trainer
-                return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, 0x0a /*10kg flywheel*/);
-            }
-
-        case FT_SSMODE:
-            {
-                static const int algo = FT_SSMODE_ALGO_NEWTONS;
-                //static const int algo = FT_SSMODE_ALGO_V_MATCH;
-                //static const int algo = FT_SSMODE_ALGO_NATIVE;
-
-                switch (algo)
-                {
-                    case FT_SSMODE_ALGO_NEWTONS:
-                        {
-                            // Slope mode receives newtons of resistance directly.
-                            // Send command to trainer
-                            return sendCommand_RESISTANCE(UpperForceLimit(c.resistanceNewtons), pedalSensor, c.weight);
-                        }
-
-                    case FT_SSMODE_ALGO_V_MATCH:
-                        {
-                            const double ratio = 1 + (deviceSpeedMS - c.simSpeedMS) / c.simSpeedMS;
-                            const double targetForce_N = c.resistanceNewtons * (ratio*ratio*ratio);
-
-                            return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, c.weight);
-                            //deviceSpeedMS.get() < c.simSpeedMS ? 0x0a : weight, // freewheel of sorts?
-                        }
-
-                    case FT_SSMODE_ALGO_NATIVE:
-                        {
-                            const double v_ms          = deviceSpeedMS;
-
-                            const double Froll_N       = c.rollingResistance * c.weight * 9.81;
-                            const double Fair_N        = 0.5 * c.windResistance * (v_ms + c.windSpeed_ms) * abs(v_ms + c.windSpeed_ms) * 1.0;
-                            const double Fslope_N      = c.gradient/100.0 * c.weight * 9.81;
-
-                            const double targetForce_N = Froll_N + Fair_N + Fslope_N;
-
-                            return sendCommand_RESISTANCE(UpperForceLimit(targetForce_N), pedalSensor, c.weight);
-                        }
-                }
-            }
-
-        default:
-            break; // error if here
+            targetForce_N = Froll_N + Fair_N + Fslope_N;
+        }
+        else
+        {
+            // Default slope mode receives newtons of resistance directly.
+            targetForce_N = c.resistanceNewtons;
+        }
     }
 
-    return 0;
+    // Send resistance command to trainer
+    // Ensure that load never exceeds physical limit of device.
+    return sendCommand_RESISTANCE(UpperForceLimit(deviceSpeedMS, targetForce_N), pedalSensor, weight_kg);
 }
 
 

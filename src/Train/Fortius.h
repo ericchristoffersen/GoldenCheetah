@@ -199,7 +199,7 @@ private:
 
     // Device status running, paused, disconnected
     int deviceStatus; // must acquire pvars for read/write
-    
+
     // INBOUND TELEMETRY - read & write requires lock since written by run() thread
     DeviceTelemetry _device; // must acquire pvars for read/write
 

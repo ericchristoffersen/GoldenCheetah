@@ -147,7 +147,7 @@ FortiusController::setMode(int mode)
     if (mode == RT_MODE_ERGO) mode = Fortius::FT_ERGOMODE;
     else if (mode == RT_MODE_SPIN) mode = Fortius::FT_SSMODE;
     else mode = Fortius::FT_IDLE;
-    
+
     myFortius->setMode(mode);
 }
 
@@ -240,7 +240,7 @@ FortiusController::getCalibrationZeroOffset()
             // keep a note of the last N calibration values
             // keep running calibration until the last N values differ by less than some threshold M
 
-            // Get current value and push onto the list of recent values 
+            // Get current value and push onto the list of recent values
             double latest = myFortius->getTelemetry().ForceNewtons;
 
             // unexpected resistance (pedalling) will cause calibration to terminate

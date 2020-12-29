@@ -251,6 +251,7 @@ FortiusController::getCalibrationZeroOffset()
             if (calibration_values.is_full())
             {
                 calibrationState = CALIBRATION_STATE_STARTED;
+                calibrationStarted = time(nullptr);
             }
             return Fortius::N_to_rawForce(latest);
         }
@@ -280,7 +281,9 @@ FortiusController::getCalibrationZeroOffset()
             // but runtime would be too long for users, especially from cold
             static const double stddev_threshold = 0.05;
 
-            if (stddev < stddev_threshold) // termination (settling) condition
+            // termination (settling) conditions
+            if (stddev < stddev_threshold
+                || (time(nullptr) - calibrationStarted) > calibrationDurationLimit_s)
             {
                 // accept the current average as the final valibration value
                 myFortius->setBrakeCalibrationForce(-mean);

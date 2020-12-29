@@ -30,6 +30,8 @@ class FortiusController : public RealtimeController
     Q_OBJECT
 
 public:
+    static const int calibrationDurationLimit_s = 60;
+
     FortiusController (TrainSidebar *, DeviceConfiguration *);
 
     Fortius *myFortius;               // the device itself
@@ -65,6 +67,7 @@ public:
 
 private:
     uint8_t  calibrationState = CALIBRATION_STATE_IDLE;
+    time_t   calibrationStarted;
     NSampleSmoothing<100> calibration_values;
 };
 

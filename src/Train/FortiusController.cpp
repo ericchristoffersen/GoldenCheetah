@@ -208,7 +208,7 @@ FortiusController::setCalibrationState(uint8_t state)
 
     case CALIBRATION_STATE_PENDING:
         myFortius->setMode(Fortius::FT_CALIBRATE);
-        calibrationState = CALIBRATION_STATE_STARTING;
+        calibrationState = CALIBRATION_STATE_REQUESTED;
         break;
 
     default:
@@ -224,24 +224,43 @@ FortiusController::getCalibrationZeroOffset()
     switch (calibrationState)
     {
         // Waiting for use to kick pedal...
-        case CALIBRATION_STATE_STARTING:
+        case CALIBRATION_STATE_REQUESTED:
         {
             if (myFortius->getTelemetry().SpeedMS * 3.6 > 19.9)
             {
                 calibration_values.reset();
-                calibrationState = CALIBRATION_STATE_STARTED;
+                calibrationState = CALIBRATION_STATE_STARTING;
             }
             return 0;
         }
 
-        // Calibration running
-        case CALIBRATION_STATE_STARTED:
+        // Calibration starting, waiting until we have enough values
+        case CALIBRATION_STATE_STARTING:
         {
-            // keep a note of the last N calibration values
-            // keep running calibration until the last N values differ by less than some threshold M
-
             // Get current value and push onto the list of recent values
             double latest = myFortius->getTelemetry().ForceNewtons;
+            calibration_values.update(latest);
+
+            // unexpected resistance (pedalling) will cause calibration to terminate
+            if (latest > 0)
+            {
+                calibrationState = CALIBRATION_STATE_FAILURE;
+                return 0;
+            }
+
+            if (calibration_values.is_full())
+            {
+                calibrationState = CALIBRATION_STATE_STARTED;
+            }
+            return latest * 137.;
+        }
+
+        // Calibration started, runs until standard deviation is below some threshold
+        case CALIBRATION_STATE_STARTED:
+        {
+            // Get current value and push onto the list of recent values
+            double latest = myFortius->getTelemetry().ForceNewtons;
+            calibration_values.update(latest);
 
             // unexpected resistance (pedalling) will cause calibration to terminate
             if (latest > 0)
@@ -251,7 +270,6 @@ FortiusController::getCalibrationZeroOffset()
             }
 
             // calculate the average
-            calibration_values.update(latest);
             const double mean   = calibration_values.mean();
             const double stddev = calibration_values.stddev();
 
@@ -262,7 +280,7 @@ FortiusController::getCalibrationZeroOffset()
             // but runtime would be too long for users, especially from cold
             static const double stddev_threshold = 0.05;
 
-            if (calibration_values.is_full() && stddev < stddev_threshold) // termination (settling) condition
+            if (stddev < stddev_threshold) // termination (settling) condition
             {
                 // accept the current average as the final valibration value
                 myFortius->setBrakeCalibrationForce(-mean);
@@ -271,7 +289,7 @@ FortiusController::getCalibrationZeroOffset()
             }
 
             // Need to return a uint16_t, and TrainSidebar displays to user as raw value
-            return 137. * (calibration_values.is_full() ? mean : latest);
+            return 137. * -(calibration_values.is_full() ? mean : latest);
         }
 
         case CALIBRATION_STATE_SUCCESS:

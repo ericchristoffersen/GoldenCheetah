@@ -2426,11 +2426,15 @@ void TrainSidebar::updateCalibration()
 
             case CALIBRATION_STATE_IDLE:
             case CALIBRATION_STATE_PENDING:
+                break;
+
             case CALIBRATION_STATE_REQUESTED:
+                status = QString(tr("Give the pedal a kick to start calibration...\nThe motor will run until calibration is complete."));
                 break;
 
             case CALIBRATION_STATE_STARTING:
-                status = QString(tr("Give the pedal a kick to start calibration...\nThe motor will run until calibration is complete."));
+                status = QString(tr("Calibrating... DO NOT PEDAL, remain seated...\nGathering enough samples to calculate average: %1"))
+                            .arg(QString::number((int16_t)calibrationZeroOffset));
                 break;
 
             case CALIBRATION_STATE_STARTED:

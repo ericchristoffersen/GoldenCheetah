@@ -89,10 +89,10 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
     //
     // PASS BACK TELEMETRY
     //
-    rtData.setWatts(telemetry.Smooth_PowerWatts);
+    rtData.setWatts(telemetry.Power_W);
     rtData.setHr(telemetry.HeartRate);
     rtData.setCadence(telemetry.Cadence);
-    rtData.setSpeed(telemetry.SpeedMS * 3.6); // to kph
+    rtData.setSpeed(Fortius::ms_to_kph(telemetry.Speed_ms));
 
 
     // post processing, probably not used
@@ -136,9 +136,9 @@ FortiusController::setLoad(double load)
 }
 
 void
-FortiusController::setGradientWithSimState(double gradient, double resistanceNewtons, double speedKph)
+FortiusController::setGradientWithSimState(double gradient, double targetForce_N, double speed_kph)
 {
-    myFortius->setGradientWithSimState(gradient, resistanceNewtons, speedKph);
+    myFortius->setGradientWithSimState(gradient, targetForce_N, speed_kph);
 }
 
 void
@@ -226,7 +226,7 @@ FortiusController::getCalibrationZeroOffset()
         // Waiting for use to kick pedal...
         case CALIBRATION_STATE_REQUESTED:
         {
-            if (myFortius->getTelemetry().SpeedMS * 3.6 > 19.9)
+            if (myFortius->getTelemetry().Speed_ms > Fortius::kph_to_ms(19.9))
             {
                 calibration_values.reset();
                 calibrationState = CALIBRATION_STATE_STARTING;
@@ -238,7 +238,7 @@ FortiusController::getCalibrationZeroOffset()
         case CALIBRATION_STATE_STARTING:
         {
             // Get current value and push onto the list of recent values
-            double latest = myFortius->getTelemetry().ForceNewtons;
+            double latest = myFortius->getTelemetry().Force_N;
             calibration_values.update(latest);
 
             // unexpected resistance (pedalling) will cause calibration to terminate
@@ -252,14 +252,14 @@ FortiusController::getCalibrationZeroOffset()
             {
                 calibrationState = CALIBRATION_STATE_STARTED;
             }
-            return latest * 137.;
+            return Fortius::N_to_rawForce(latest);
         }
 
         // Calibration started, runs until standard deviation is below some threshold
         case CALIBRATION_STATE_STARTED:
         {
             // Get current value and push onto the list of recent values
-            double latest = myFortius->getTelemetry().ForceNewtons;
+            double latest = myFortius->getTelemetry().Force_N;
             calibration_values.update(latest);
 
             // unexpected resistance (pedalling) will cause calibration to terminate
@@ -286,14 +286,20 @@ FortiusController::getCalibrationZeroOffset()
                 myFortius->setBrakeCalibrationForce(-mean);
                 calibrationState = CALIBRATION_STATE_SUCCESS;
                 myFortius->setMode(Fortius::FT_IDLE);
+
+                // TODO... just because we have determined the current value
+                // doesn't mean it's "right"... TTS4 had a red-green bar and
+                // plotted the value on that bar, and user was to adjust wheel
+                // pressure if it was outside the green range.
+                // There were no units. We should probably look at that...
             }
 
             // Need to return a uint16_t, and TrainSidebar displays to user as raw value
-            return 137. * -(calibration_values.is_full() ? mean : latest);
+            return Fortius::N_to_rawForce(-(calibration_values.is_full() ? mean : latest));
         }
 
         case CALIBRATION_STATE_SUCCESS:
-            return 137. * myFortius->getBrakeCalibrationForce();
+            return Fortius::N_to_rawForce(myFortius->getBrakeCalibrationForce());
 
         default:
             return 0;

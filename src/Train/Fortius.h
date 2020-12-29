@@ -119,35 +119,45 @@ private:
     enum FortiusCommandModeValue { FT_MODE_IDLE = 0x00, FT_MODE_ACTIVE = 0x02, FT_MODE_CALIBRATE = 0x03 };
 
 public:
+    static inline double kph_to_ms      (double kph) { return kph / 3.6; }
+    static inline double ms_to_kph      (double ms)  { return ms  * 3.6; }
+
+    static inline double rawForce_to_N  (double raw) { return raw / 137.; }
+    static inline double N_to_rawForce  (double N)   { return N   * 137.; }
+
+    static inline double rawSpeed_to_ms (double raw) { return raw / 1043.1; } // 289.75*3.6
+    static inline double ms_to_rawSpeed (double ms)  { return ms  * 1043.1; } // 289.75*3.6
+
     enum FortiusMode    { FT_IDLE, FT_ERGOMODE, FT_SSMODE, FT_CALIBRATE };
     enum FortiusButtons { FT_ENTER = 0x01, FT_MINUS = 0x02, FT_PLUS = 0x04, FT_CANCEL = 0x08 };
 
-    Fortius(QObject *parent=0);                   // pass device
+    Fortius(QObject *parent=0);                  // pass device
     ~Fortius();
 
     QObject *parent;
 
     // HIGH-LEVEL FUNCTIONS
-    int start();                                // Calls QThread to start
-    int restart();                              // restart after paused
-    int pause();                                // pauses data collection, inbound telemetry is discarded
-    int stop();                                 // stops data collection thread
-    int quit(int error);                        // called by thread before exiting
+    int start();                                 // Calls QThread to start
+    int restart();                               // restart after paused
+    int pause();                                 // pauses data collection, inbound telemetry is discarded
+    int stop();                                  // stops data collection thread
+    int quit(int error);                         // called by thread before exiting
 
-    bool find();                                // either unconfigured or configured device found
-    bool discover(QString deviceFilename);      // confirm CT is attached to device
+    bool find();                                 // either unconfigured or configured device found
+    bool discover(QString deviceFilename);       // confirm CT is attached to device
 
     // SET
-    void setLoad(double load);                  // set the load to generate in ERGOMODE
-    void setGradientWithSimState(double gradient, double resistanceNewtons, double speedKph); // set the load to generate in SSMODE
-    void setBrakeCalibrationForce(double value);   // set the calibration force (N) for ERGOMODE and SSMODE
-    void setBrakeCalibrationFactor(double calibrationFactor); // Impacts relationship between brake setpoint and load
-    void setPowerScaleFactor(double calibrationFactor);       // Scales output power, so user can adjust to match hub or crank power meter
-    void setMode(int mode);
-    void setWeight(double weight);                 // set the total weight of rider + bike in kg's
-    void setWindSpeed(double);                  // set the wind speed for power calculation in SSMODE
-    void setRollingResistance(double);          // set the rolling resistance coefficient for power calculation in SSMODE
-    void setWindResistance(double);             // set the wind resistance coefficient for power calculation in SSMODE
+    void setLoad(double load);                   // set the load to generate in ERGOMODE
+    void setGradientWithSimState(double gradient,
+        double targetForce_N, double speed_kph); // set the load to generate in SSMODE
+    void setBrakeCalibrationForce(double value); // set the calibration force (N) for ERGOMODE and SSMODE
+    void setBrakeCalibrationFactor(double);      // Impacts relationship between brake setpoint and load
+    void setPowerScaleFactor(double);            // Scales output power, so user can adjust to match hub or crank power meter
+    void setMode(int mode);                      // set the mode
+    void setWeight(double weight_kg);            // set the total weight of rider + bike in kg's
+    void setWindSpeed(double);                   // set the wind speed for power calculation in SSMODE
+    void setRollingResistance(double);           // set the rolling resistance coefficient for power calculation in SSMODE
+    void setWindResistance(double);              // set the wind resistance coefficient for power calculation in SSMODE
 
     // GET
     int    getMode() const;
@@ -163,18 +173,18 @@ public:
     // to sync data read/writes between the run() thread and the main gui thread
     struct DeviceTelemetry
     {
-        double ForceNewtons;  // current output force in Newtons
-        double PowerWatts;    // current output power in Watts
+        double Force_N;       // current output force in Newtons
+        double Power_W;       // current output power in Watts
         double HeartRate;     // current heartrate in BPM
         double Cadence;       // current cadence in RPM
-        double SpeedMS;       // current speed in Meters per second (derived from wheel speed)
+        double Speed_ms;      // current speed in Meters per second (derived from wheel speed)
         double Distance;      // odometer in meters
         int    Buttons;       // Button status
         int    Steering;      // Steering angle
 
-        NSampleSmoothing<10> Smooth_SpeedMS;
-        NSampleSmoothing<10> Smooth_ForceNewtons;
-        double Smooth_PowerWatts;
+        NSampleSmoothing<10> Smooth_Speed_ms;
+        NSampleSmoothing<10> Smooth_Force_N;
+        double Smooth_Power_W;
     };
     DeviceTelemetry getTelemetry();
 
@@ -186,13 +196,13 @@ private:
     int closePort();
 
     // Protocol encoding
-    int sendRunCommand(double deviceSpeedMS, double smoothedSpeedMS, int16_t pedalSensor);
+    int sendRunCommand(double deviceSpeed_ms, double smoothedSpeed_ms, int16_t pedalSensor);
 
     int sendCommand_OPEN();
     int sendCommand_IDLE();
-    int sendCommand_RESISTANCE(double forceNewtons, uint8_t pedecho, uint8_t weight);
-    int sendCommand_CALIBRATE(double speedMS);
-    int sendCommand_GENERIC(uint8_t mode, double rawforce, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_RESISTANCE(double force_N, uint8_t pedecho, uint8_t weight_kg);
+    int sendCommand_CALIBRATE(double speed_ms);
+    int sendCommand_GENERIC(uint8_t mode, double rawForce, uint8_t pedecho, uint8_t weight_kg, uint16_t calibration);
 
 
     // Protocol decoding
@@ -212,14 +222,14 @@ private:
     struct ControlParameters {
         int    mode;
         int    algo;
-        double loadWatts;
-        double resistanceNewtons;      // load demanded by simulator
-        double simSpeedMS;             // simulator's speed, a speed to match if possible
-        double gradient;               // not used
+        double targetPower_W;      // set-point power demanded for ERGO mode
+        double targetForce_N;      // load demanded by simulator
+        double simSpeed_ms;        // simulator's speed, a speed to match if possible
+        double gradient;           // only used in the "standalone" slope algorithm
         double powerScaleFactor;
-        double weight;
+        double weight_kg;
         double brakeCalibrationFactor;
-        double brakeCalibrationForceNewtons;
+        double brakeCalibrationForce_N;
         double windSpeed_ms;
         double rollingResistance;
         double windResistance;

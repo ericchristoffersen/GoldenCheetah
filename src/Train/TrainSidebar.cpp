@@ -2439,8 +2439,8 @@ void TrainSidebar::updateCalibration()
 
             case CALIBRATION_STATE_STARTED:
                 {
-                    const double calibrationPower_W = calibrationZeroOffset/137. * (calibrationTargetSpeed/*kph*//3.6);
-                    status = QString(tr("Calibrating... DO NOT PEDAL, remain seated...\nWaiting for calibration value to stabilize: %1 (%2 W @ %3 kph)"))
+                    const double calibrationPower_W = Fortius::rawForce_to_N(calibrationZeroOffset) * Fortius::kph_to_ms(calibrationTargetSpeed);
+                    status = QString(tr("Calibrating... DO NOT PEDAL, remain seated...\nWaiting for calibration value to stabilize: %1 (%2W @ %3kph)"))
                             .arg(QString::number((int16_t)calibrationZeroOffset),
                                  QString::number((int16_t)calibrationPower_W),
                                  QString::number((int16_t)calibrationTargetSpeed));
@@ -2453,8 +2453,8 @@ void TrainSidebar::updateCalibration()
 
             case CALIBRATION_STATE_SUCCESS:
                 {
-                    const double calibrationPower_W = calibrationZeroOffset/137. * (calibrationTargetSpeed/*kph*//3.6);
-                    status = QString(tr("Calibration completed successfully!\nFinal calibration value %1 (%2 W @ %3 kph)"))
+                    const double calibrationPower_W = Fortius::rawForce_to_N(calibrationZeroOffset) * Fortius::kph_to_ms(calibrationTargetSpeed);
+                    status = QString(tr("Calibration completed successfully!\nFinal calibration value %1 (%2W @ %3kph)"))
                             .arg(QString::number((int16_t)calibrationZeroOffset),
                                  QString::number((int16_t)calibrationPower_W),
                                  QString::number((int16_t)calibrationTargetSpeed));

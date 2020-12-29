@@ -37,7 +37,7 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     deviceStatus=0;
 
     _control.mode                         = FT_IDLE;
-    _control.algo                         = 2;   // loaded from settings on connect
+    _control.algo                         = 1;   // loaded from settings on connect
     _control.brakeCalibrationFactor       = 0.0;
     _control.brakeCalibrationForce_N      = 0.0; // loaded from settings on connect, or set upon calibration
     _control.targetPower_W                = 100.0;
@@ -542,7 +542,7 @@ int Fortius::sendRunCommand(double deviceSpeed_ms, double smoothSpeed_ms, int16_
             targetForce_N            = Froll_N + Fair_N + Fslope_N;
         }
         else if (c.algo == 1)
-        {// ALGORITHM 1 - sim provides force, only
+        {// ALGORITHM 1 - sim provides force, only - DEFAULT
 
             targetForce_N            = c.targetForce_N;
         }

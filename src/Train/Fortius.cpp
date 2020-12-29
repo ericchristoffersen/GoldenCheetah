@@ -25,21 +25,6 @@
 
 #include <QtCore/qendian.h>
 
-
-//#include <stdio.h>
-//#include <stdint.h>
-//#include <stddef.h>
-//#include <stdlib.h>
-//#include <errno.h>
-//#include <fcntl.h>
-//#include <sys/types.h>
-
-//#include <QFile>
-//#include <QDialog>
-//#include <QDebug>
-//#include "RealtimeController.h"
-
-
 class Lock
 {
     QMutex& mutex;

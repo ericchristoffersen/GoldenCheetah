@@ -45,8 +45,9 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     deviceStatus=0;
 
     _control.mode                         = FT_IDLE;
+    _control.algo                         = 2;   // loaded from settings on connect
     _control.brakeCalibrationFactor       = 0.0;
-    _control.brakeCalibrationForceNewtons = 7.59; //(0x0410 / 137.);
+    _control.brakeCalibrationForceNewtons = 0.0; // loaded from settings on connect, or set upon calibration
     _control.loadWatts                    = 100.0;
     _control.gradient                     = 2.0;
     _control.weight                       = 77;
@@ -125,6 +126,9 @@ Fortius::setWindResistance(double wr)
 
 void Fortius::setBrakeCalibrationForce(double val)
 {
+    // save raw calibration value
+    appsettings->setValue(TRAIN_FORTIUSCALIBRATION, static_cast<int>(val * s_newtonsToResistanceFactor));
+
     Lock lock(pvars);
     _control.brakeCalibrationForceNewtons = val;
 }
@@ -203,18 +207,6 @@ double Fortius::getPowerScaleFactor() const
     return _control.powerScaleFactor;
 }
 
-int
-Fortius::start()
-{
-    {
-        Lock lock(pvars);
-        deviceStatus = FT_RUNNING;
-    }
-
-    QThread::start();
-    return 0;
-}
-
 
 
 /* ----------------------------------------------------------------------
@@ -233,6 +225,25 @@ Fortius::start()
  *         it is kicked off by start and then examines status to check
  *         when it is time to pause or stop altogether.
  * ---------------------------------------------------------------------- */
+int
+Fortius::start()
+{
+    {
+        Lock lock(pvars);
+        deviceStatus = FT_RUNNING;
+
+        // Lead raw calibration value, and convert to N
+        const double raw_saved_calibration = appsettings->value(this, TRAIN_FORTIUSCALIBRATION, 0x0410).toInt();
+        _control.brakeCalibrationForceNewtons = raw_saved_calibration / s_newtonsToResistanceFactor;
+
+        // DEVELOPER: Read algorithm setting
+        _control.algo = appsettings->value(this, TRAIN_FORTIUSALGO, _control.algo).toInt();
+    }
+
+    QThread::start();
+    return 0;
+}
+
 int Fortius::restart()
 {
     // get current status
@@ -414,7 +425,15 @@ void Fortius::run()
         if (!(curstatus & FT_RUNNING)) {
             // time to stop!
 
-            sendCommand_CLOSE();
+            // Once is not enough...
+            // edgecase:
+            // - calibrate
+            // - while motor running hit stop, it keeps running
+            // - then hit disconnect, it KEEPS running
+            // - unless you call twice, as below
+            sendCommand_IDLE();
+            msleep(100);
+            sendCommand_IDLE();
 
             closePort(); // need to release that file handle!!
             quit(0);
@@ -465,8 +484,9 @@ namespace {
     {
         // We think the trainer has an inherent, absolute-maximum Force limit
         // See: https://www.qbp.com/diagrams/TechInfo/Tacx/MA9571.pdf
-        // Here we assume Fortius is like i-Genius, and has ~118N max force
-        static const double F_absmax = 118.;
+        // Here we could assume Fortius is like i-Genius, and has ~118N max force
+        // Instead, we will set conservative value
+        static const double F_absmax = 100.;
 
         // Below a certain speed, max force is no longer constant
         // In other words, at low speeds, max power is no longer linear
@@ -477,7 +497,7 @@ namespace {
         //   F_max_v is the maximum force we should command at speed v
         //       v^2 is the square of the velocity (v in m/s)
         //         Q is some constant derived empirically
-        static const double Q = 9.;
+        static const double Q = 8.;
 
         const double F_max_v = v*v * Q;
 
@@ -514,30 +534,44 @@ int Fortius::sendRunCommand(double deviceSpeedMS, double smoothSpeedMS, int16_t 
     {
         // Force (N) = Power (W) / Speed (m/s)
         // Note: avoid divide by zero
-        targetForce_N = c.loadWatts / std::max(0.1, deviceSpeedMS);
+        targetForce_N = c.loadWatts / std::max(0.1, smoothSpeedMS);
         weight_kg     = 0x0a; // 10kg flywheel
     }
     else // FT_SSMODE
     {
-        if (false)
+        if (c.algo == 0)
         {
-            const double ratio = 1 + (deviceSpeedMS - c.simSpeedMS) / c.simSpeedMS;
+            // ALGORITHM 0 - standalone calculation of force, no sim
+            const double v_ms        = smoothSpeedMS;
+            const double Froll_N     = c.rollingResistance * c.weight * 9.81;
+            const double Fair_N      = 0.5 * c.windResistance * (v_ms + c.windSpeed_ms) * abs(v_ms + c.windSpeed_ms) * 1.0;
+            const double Fslope_N    = c.gradient/100.0 * c.weight * 9.81;
 
-            targetForce_N = c.resistanceNewtons * (ratio*ratio*ratio);
+            targetForce_N            = Froll_N + Fair_N + Fslope_N;
         }
-        else if (false)
-        {
-            const double v_ms     = deviceSpeedMS;
+        else if (c.algo == 1)
+        {// ALGORITHM 1 - sim provides force, only
 
-            const double Froll_N  = c.rollingResistance * c.weight * 9.81;
-            const double Fair_N   = 0.5 * c.windResistance * (v_ms + c.windSpeed_ms) * abs(v_ms + c.windSpeed_ms) * 1.0;
-            const double Fslope_N = c.gradient/100.0 * c.weight * 9.81;
+            targetForce_N            = c.resistanceNewtons;
+        }
+        else if (c.algo == 2)
+        {// ALGORITHM 2 - sim provides force, speed match
+            const double ratio       = 1 + (smoothSpeedMS - c.simSpeedMS) / c.simSpeedMS;
+            const double ratio_cubed = ratio*ratio*ratio;
 
-            targetForce_N = Froll_N + Fair_N + Fslope_N;
+            targetForce_N            = c.resistanceNewtons * ratio_cubed;
+        }
+        else if (c.algo == 3)
+        {// ALGORITHM 3 - sim provides force, speed match and flyweel
+            const double ratio       = 1 + (smoothSpeedMS - c.simSpeedMS) / c.simSpeedMS;
+            const double ratio_cubed = ratio*ratio*ratio;
+
+            weight_kg                = std::max(10., std::min(255., weight_kg * ratio_cubed));
+            targetForce_N            = c.resistanceNewtons * ratio_cubed;
         }
         else
-        {
-            // Default slope mode receives newtons of resistance directly.
+        {// ALGORITHM 4 - SPARE, default to 1
+
             targetForce_N = c.resistanceNewtons;
         }
     }
@@ -563,19 +597,17 @@ int Fortius::sendRunCommand(double deviceSpeedMS, double smoothSpeedMS, int16_t 
 // 10            Calibration Value - Lo Byte
 // 11            Calibration High - Hi Byte
 
-// Encoded Calibration is 130 x Calibration Value + 1040 so calibration of zero gives 0x0410
-
 int Fortius::sendCommand_OPEN()
 {
     static const uint8_t command[4] = {0x02,0x00,0x00,0x00};
     return rawWrite(command, 4);
 }
 
-int Fortius::sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pedecho, uint8_t weight, uint16_t calibration)
+int Fortius::sendCommand_GENERIC(uint8_t mode, double rawforce, uint8_t pedecho, uint8_t weight, uint16_t calibration)
 {
     uint8_t command[12] = { 0x01, 0x08, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-    const double resistance = std::min<double>(SHRT_MAX, forceNewtons);
+    const double resistance = std::min<double>(SHRT_MAX, rawforce);
     qToLittleEndian<int16_t>(resistance, &command[4]);
 
     command[6] = pedecho;
@@ -586,7 +618,7 @@ int Fortius::sendCommand_GENERIC(uint8_t mode, double forceNewtons, uint8_t pede
     return rawWrite(command, 12);
 }
 
-int Fortius::sendCommand_CLOSE()
+int Fortius::sendCommand_IDLE()
 {
     return sendCommand_GENERIC(FT_MODE_IDLE, 0, 0, 0x52 /* flywheel enabled at 82 kg */, 0);
 }

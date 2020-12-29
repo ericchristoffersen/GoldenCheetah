@@ -52,6 +52,12 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
+#include <Core/Settings.h>
+#define TRAIN_FORTIUSALGO              "<global-trainmode>train/fortiusalgo"
+#define TRAIN_FORTIUSCALIBRATION       "<global-trainmode>train/fortiuscalibration"
+// could (should?) be defined in Core/Settings.h
+// but they are not currently used anywhere other than Fortius.cpp
+
 template <size_t N>
 class NSampleSmoothing
 {
@@ -183,10 +189,10 @@ private:
     int sendRunCommand(double deviceSpeedMS, double smoothedSpeedMS, int16_t pedalSensor);
 
     int sendCommand_OPEN();
-    int sendCommand_CLOSE();
+    int sendCommand_IDLE();
     int sendCommand_RESISTANCE(double forceNewtons, uint8_t pedecho, uint8_t weight);
     int sendCommand_CALIBRATE(double speedMS);
-    int sendCommand_GENERIC(uint8_t mode, double rawForceVal, uint8_t pedecho, uint8_t weight, uint16_t calibration);
+    int sendCommand_GENERIC(uint8_t mode, double rawforce, uint8_t pedecho, uint8_t weight, uint16_t calibration);
 
 
     // Protocol decoding
@@ -205,6 +211,7 @@ private:
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     struct ControlParameters {
         int    mode;
+        int    algo;
         double loadWatts;
         double resistanceNewtons;      // load demanded by simulator
         double simSpeedMS;             // simulator's speed, a speed to match if possible

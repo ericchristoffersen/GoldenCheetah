@@ -31,86 +31,14 @@
 
 #ifndef _GC_Fortius_h
 #define _GC_Fortius_h 1
-#include "GoldenCheetah.h"
+
+#include <cmath>
 
 #include <QString>
-#include <QDialog>
-#include <QDebug>
 #include <QThread>
 #include <QMutex>
-#include <QFile>
-#include <QtCore/qendian.h>
-#include "RealtimeController.h"
 
 #include "LibUsb.h"
-
-#include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/types.h>
-
-#include <Core/Settings.h>
-#define TRAIN_FORTIUSALGO              "<global-trainmode>train/fortiusalgo"
-#define TRAIN_FORTIUSCALIBRATION       "<global-trainmode>train/fortiuscalibration"
-// could (should?) be defined in Core/Settings.h
-// but they are not currently used anywhere other than Fortius.cpp
-
-template <size_t N>
-class NSampleSmoothing
-{
-    private:
-        int    nSamples   = 0;
-        double samples[N];
-        int    index      = 0;
-        double total      = 0;
-        bool   full       = false;
-
-    public:
-        NSampleSmoothing()
-        {
-            reset();
-        }
-
-        void reset()
-        {
-            for (int i=0; i<N; ++i)
-                samples[i] = 0.;
-            nSamples = 0;
-            index    = 0;
-            total    = 0;
-            full     = false;
-        }
-
-        void update(double newVal)
-        {
-            ++nSamples;
-
-            total += newVal - samples[index];
-            samples[index] = newVal;
-            if (++index == N) { index = 0; full = true; }
-        }
-
-        bool is_full() const
-        {
-            return full;
-        }
-
-        double mean() const
-        {
-            // average if we have enough values, otherwise return latest
-            return total / N;//(nSamples > N) ? (total / N) : samples[(index + (N-1))%N];
-        }
-
-        double stddev() const
-        {
-            const double avg = mean();
-            const double sum_squares = std::accumulate(std::begin(samples), std::end(samples), 0.0, [avg](double acc, double sample){return acc + (sample-avg)*(sample-avg);});
-            return sqrt(sum_squares / static_cast<double>(N));
-        }
-};
 
 class Fortius : public QThread
 {
@@ -155,9 +83,6 @@ public:
     void setPowerScaleFactor(double);            // Scales output power, so user can adjust to match hub or crank power meter
     void setMode(int mode);                      // set the mode
     void setWeight(double weight_kg);            // set the total weight of rider + bike in kg's
-    void setWindSpeed(double);                   // set the wind speed for power calculation in SSMODE
-    void setRollingResistance(double);           // set the rolling resistance coefficient for power calculation in SSMODE
-    void setWindResistance(double);              // set the wind resistance coefficient for power calculation in SSMODE
 
     // GET
     int    getMode() const;
@@ -181,12 +106,8 @@ public:
         double Distance;      // odometer in meters
         int    Buttons;       // Button status
         int    Steering;      // Steering angle
-
-        NSampleSmoothing<10> Smooth_Speed_ms;
-        NSampleSmoothing<10> Smooth_Force_N;
-        double Smooth_Power_W;
     };
-    DeviceTelemetry getTelemetry();
+    void getTelemetry(DeviceTelemetry&);
 
 private:
     void run();                                 // called by start to kick off the CT comtrol thread
@@ -196,7 +117,7 @@ private:
     int closePort();
 
     // Protocol encoding
-    int sendRunCommand(double deviceSpeed_ms, double smoothedSpeed_ms, int16_t pedalSensor);
+    int sendRunCommand(double deviceSpeed_ms, int16_t pedalSensor);
 
     int sendCommand_OPEN();
     int sendCommand_IDLE();
@@ -221,18 +142,14 @@ private:
     // OUTBOUND COMMANDS read & write requires lock since written by gui() thread
     struct ControlParameters {
         int    mode;
-        int    algo;
         double targetPower_W;      // set-point power demanded for ERGO mode
         double targetForce_N;      // load demanded by simulator
         double simSpeed_ms;        // simulator's speed, a speed to match if possible
-        double gradient;           // only used in the "standalone" slope algorithm
+        double gradient;           // may be used in reworked/alternative slope algorithm
         double powerScaleFactor;
         double weight_kg;
         double brakeCalibrationFactor;
         double brakeCalibrationForce_N;
-        double windSpeed_ms;
-        double rollingResistance;
-        double windResistance;
     } _control; // must acquire pvars for read/write
 
 

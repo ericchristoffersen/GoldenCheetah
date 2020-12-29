@@ -84,7 +84,8 @@ FortiusController::getRealtimeData(RealtimeData &rtData)
     }
 
     // get latest telemetry
-    const auto telemetry = myFortius->getTelemetry();
+    Fortius::DeviceTelemetry telemetry;
+    myFortius->getTelemetry(telemetry);
 
     //
     // PASS BACK TELEMETRY
@@ -157,24 +158,6 @@ FortiusController::setWeight(double weight)
     myFortius->setWeight(weight);
 }
 
-void
-FortiusController::setWindSpeed(double ws)
-{
-    myFortius->setWindSpeed(ws);
-}
-
-void
-FortiusController::setRollingResistance(double rr)
-{
-    myFortius->setRollingResistance(rr);
-}
-
-void
-FortiusController::setWindResistance(double wr)
-{
-    myFortius->setWindResistance(wr);
-}
-
 
 // Calibration
 
@@ -187,7 +170,7 @@ FortiusController::getCalibrationType()
 double
 FortiusController::getCalibrationTargetSpeed()
 {
-    return 20;
+    return 20; // kph
 }
 
 uint8_t
@@ -226,7 +209,10 @@ FortiusController::getCalibrationZeroOffset()
         // Waiting for use to kick pedal...
         case CALIBRATION_STATE_REQUESTED:
         {
-            if (myFortius->getTelemetry().Speed_ms > Fortius::kph_to_ms(19.9))
+            Fortius::DeviceTelemetry telemetry;
+            myFortius->getTelemetry(telemetry);
+
+            if (telemetry.Speed_ms > Fortius::kph_to_ms(19.9))
             {
                 calibration_values.reset();
                 calibrationState = CALIBRATION_STATE_STARTING;
@@ -238,7 +224,10 @@ FortiusController::getCalibrationZeroOffset()
         case CALIBRATION_STATE_STARTING:
         {
             // Get current value and push onto the list of recent values
-            double latest = myFortius->getTelemetry().Force_N;
+            Fortius::DeviceTelemetry telemetry;
+            myFortius->getTelemetry(telemetry);
+
+            const double latest = telemetry.Force_N;
             calibration_values.update(latest);
 
             // unexpected resistance (pedalling) will cause calibration to terminate
@@ -260,7 +249,10 @@ FortiusController::getCalibrationZeroOffset()
         case CALIBRATION_STATE_STARTED:
         {
             // Get current value and push onto the list of recent values
-            double latest = myFortius->getTelemetry().Force_N;
+            Fortius::DeviceTelemetry telemetry;
+            myFortius->getTelemetry(telemetry);
+
+            const double latest = telemetry.Force_N;
             calibration_values.update(latest);
 
             // unexpected resistance (pedalling) will cause calibration to terminate

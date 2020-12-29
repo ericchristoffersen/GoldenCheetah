@@ -18,6 +18,28 @@
 
 #include "Fortius.h"
 
+#include <Core/Settings.h>
+#define TRAIN_FORTIUSCALIBRATION       "<global-trainmode>train/fortiuscalibration"
+// could (should?) be defined in Core/Settings.h
+// but they are not currently used anywhere other than Fortius.cpp
+
+#include <QtCore/qendian.h>
+
+
+//#include <stdio.h>
+//#include <stdint.h>
+//#include <stddef.h>
+//#include <stdlib.h>
+//#include <errno.h>
+//#include <fcntl.h>
+//#include <sys/types.h>
+
+//#include <QFile>
+//#include <QDialog>
+//#include <QDebug>
+//#include "RealtimeController.h"
+
+
 class Lock
 {
     QMutex& mutex;
@@ -37,16 +59,12 @@ Fortius::Fortius(QObject *parent) : QThread(parent)
     deviceStatus=0;
 
     _control.mode                         = FT_IDLE;
-    _control.algo                         = 1;   // loaded from settings on connect
     _control.brakeCalibrationFactor       = 0.0;
     _control.brakeCalibrationForce_N      = 0.0; // loaded from settings on connect, or set upon calibration
     _control.targetPower_W                = 100.0;
     _control.gradient                     = 2.0;
     _control.weight_kg                    = 77;
     _control.powerScaleFactor             = 1.0;
-    _control.windSpeed_ms                 = 0.0;
-    _control.rollingResistance            = 0.004;
-    _control.windResistance               = 0.51;
 
     // for interacting over the USB port
     usb2 = new LibUsb(TYPE_FORTIUS);
@@ -94,28 +112,6 @@ void Fortius::setWeight(double weight_kg)
     _control.weight_kg = weight_kg;
 }
 
-void
-Fortius::setWindSpeed(double ws)
-{
-    Lock lock(pvars);
-    _control.windSpeed_ms = ws;
-}
-
-void
-Fortius::setRollingResistance(double rr)
-{
-    Lock lock(pvars);
-    _control.rollingResistance = rr;
-}
-
-void
-Fortius::setWindResistance(double wr)
-{
-    Lock lock(pvars);
-    _control.windResistance = wr;
-}
-
-
 void Fortius::setBrakeCalibrationForce(double force_N)
 {
     // save raw calibration value
@@ -138,23 +134,21 @@ void Fortius::setGradientWithSimState(double gradient, double targetForce_N, dou
     Lock lock(pvars);
     _control.targetForce_N = targetForce_N;
     _control.simSpeed_ms   = kph_to_ms(speed_kph); // for aligning simulator and trainer speeds
-    _control.gradient      = gradient; // only used in "standalone" algorithm for slope calculation
+    _control.gradient      = gradient;
 }
 
 /* ----------------------------------------------------------------------
  * GET
  * ---------------------------------------------------------------------- */
-Fortius::DeviceTelemetry Fortius::getTelemetry()
+void Fortius::getTelemetry(DeviceTelemetry& copy)
 {
     Lock lock(pvars);
-    auto copy = _device;
+    copy = _device;
 
     // work around to ensure controller doesn't miss button press.
     // The run thread will only set the button bits, they don't get
     // reset until the ui reads the device state
     _device.Buttons = 0;
-
-    return copy;
 }
 
 int Fortius::getMode() const
@@ -227,9 +221,6 @@ Fortius::start()
         // Lead raw calibration value, and convert to N
         const double raw_saved_calibration = appsettings->value(this, TRAIN_FORTIUSCALIBRATION, 0x0410).toInt();
         _control.brakeCalibrationForce_N = rawForce_to_N(raw_saved_calibration);
-
-        // DEVELOPER: Read algorithm setting
-        _control.algo = appsettings->value(this, TRAIN_FORTIUSALGO, _control.algo).toInt();
     }
 
     QThread::start();
@@ -301,7 +292,9 @@ void Fortius::run()
     int curstatus;
 
     // local copy of variables for telemetry, copied to fields on each brake update
-    DeviceTelemetry cur = getTelemetry();
+    DeviceTelemetry cur;
+    getTelemetry(cur);
+
     uint8_t pedalSensor = 0;                // 1 when using is cycling else 0, fed back to brake although appears unnecessary
 
     // open the device
@@ -320,7 +313,7 @@ void Fortius::run()
 
         if (isDeviceOpen == true) {
 
-            int rc = sendRunCommand(cur.Speed_ms, cur.Smooth_Speed_ms.mean(), pedalSensor) ;
+            int rc = sendRunCommand(cur.Speed_ms, pedalSensor) ;
             if (rc < 0) {
                 qDebug() << "usb write error " << rc;
                 // send failed - ouch!
@@ -390,11 +383,6 @@ void Fortius::run()
                 cur.Power_W  *= getPowerScaleFactor(); // apply scale factor
 
                 if (cur.Power_W < 0.0) cur.Power_W = 0.0;  // brake power can be -ve when coasting.
-
-                // Smoothed values
-                cur.Smooth_Speed_ms.update(cur.Speed_ms);
-                cur.Smooth_Force_N.update(cur.Force_N);
-                cur.Smooth_Power_W = cur.Smooth_Speed_ms.mean() * cur.Smooth_Force_N.mean();
             }
 
             if (actualLength >= 24) // ie, if either of the two blocks above were executed
@@ -499,78 +487,60 @@ namespace {
     }
 }
 
-int Fortius::sendRunCommand(double deviceSpeed_ms, double smoothSpeed_ms, int16_t pedalSensor)
+int Fortius::sendRunCommand(double deviceSpeed_ms, int16_t pedalSensor)
 {
     pvars.lock();
     const ControlParameters c = _control; // local copy
     pvars.unlock();
 
     // Depending on mode, send the appropriate command to the trainer
-    if (c.mode == FT_IDLE)
-        return sendCommand_OPEN();
-
-    if (c.mode == FT_CALIBRATE)
-        return sendCommand_CALIBRATE(kph_to_ms(20));
-
-
-    // Below here, device is being used in resistance mode
-    // Any mode or algorithm used:
-    //  - MUST set the target force
-    //  - MAY override the default configured flywheel weight
-    // A command is then sent to the trainer at the end of this function
-
-    uint8_t weight_kg     = c.weight_kg;
-    double  targetForce_N = 0;
-
-    if (c.mode == FT_ERGOMODE)
+    int rc = 0;
+    switch (c.mode)
     {
-        // Force (N) = Power (W) / Speed (m/s)
-        // Note: avoid divide by zero
-        targetForce_N = c.targetPower_W / std::max(0.1, smoothSpeed_ms);
-        weight_kg     = 0x0a; // 10kg flywheel
+        case FT_IDLE:
+            rc = sendCommand_OPEN();
+            break;
+
+        case FT_CALIBRATE:
+            rc = sendCommand_CALIBRATE(kph_to_ms(20));
+            break;
+
+        case FT_ERGOMODE:
+            {
+                // Calculate force requires, given power set-point and current device speed
+                // Note: avoid divide by zero
+                const double targetForce_N = c.targetPower_W / std::max(0.1, deviceSpeed_ms);
+
+                // Ensure that load never exceeds physical limit of device using UpperForceLimit
+                const double limitedTargetForce_N = UpperForceLimit(deviceSpeed_ms, targetForce_N);
+
+                // Send to trainer
+                rc = sendCommand_RESISTANCE(limitedTargetForce_N, pedalSensor, 0x0a /*10kg flywheel*/);
+            }
+            break;
+
+        case FT_SSMODE:
+            {
+                // Simply use targetForce_N (aka resistanceNewtons) provided by sim in setGradientWithSimState()
+
+                // TODO wheel speed matching
+                // First propsal is:
+                //     const double ratio         = 1 + (deviceSpeed_ms - c.simSpeed_ms) / c.simSpeed_ms;
+                //     const double targetForce_N = c.targetForce_N * ratio*ratio*ratio;
+                //     const double weight_kg     = some_f(c.weight_kg, deviceSpeed_ms, c.simSpeed_ms)
+
+                // Ensure that load never exceeds physical limit of device using UpperForceLimit
+                const double limitedTargetForce_N = UpperForceLimit(deviceSpeed_ms, c.targetForce_N);
+
+                // Send to trainer
+                rc = sendCommand_RESISTANCE(limitedTargetForce_N, pedalSensor, c.weight_kg);
+            }
+            break;
+
+        default:
+            break;
     }
-    else // FT_SSMODE
-    {
-        if (c.algo == 0)
-        {
-            // ALGORITHM 0 - standalone calculation of force, no sim
-            const double v_ms        = smoothSpeed_ms;
-            const double Froll_N     = c.rollingResistance * c.weight_kg * 9.81;
-            const double Fair_N      = 0.5 * c.windResistance * (v_ms + c.windSpeed_ms) * abs(v_ms + c.windSpeed_ms) * 1.0;
-            const double Fslope_N    = c.gradient/100.0 * c.weight_kg * 9.81;
-
-            targetForce_N            = Froll_N + Fair_N + Fslope_N;
-        }
-        else if (c.algo == 1)
-        {// ALGORITHM 1 - sim provides force, only - DEFAULT
-
-            targetForce_N            = c.targetForce_N;
-        }
-        else if (c.algo == 2)
-        {// ALGORITHM 2 - sim provides force, speed match
-            const double ratio       = 1 + (smoothSpeed_ms - c.simSpeed_ms) / c.simSpeed_ms;
-            const double ratio_cubed = ratio*ratio*ratio;
-
-            targetForce_N            = c.targetForce_N * ratio_cubed;
-        }
-        else if (c.algo == 3)
-        {// ALGORITHM 3 - sim provides force, speed match and flyweel
-            const double ratio       = 1 + (smoothSpeed_ms - c.simSpeed_ms) / c.simSpeed_ms;
-            const double ratio_cubed = ratio*ratio*ratio;
-
-            weight_kg                = std::max(10., std::min(255., c.weight_kg * ratio_cubed));
-            targetForce_N            = c.targetForce_N * ratio_cubed;
-        }
-        else
-        {// ALGORITHM 4 - SPARE, default to 1
-
-            targetForce_N = c.targetForce_N;
-        }
-    }
-
-    // Send resistance command to trainer
-    // Ensure that load never exceeds physical limit of device.
-    return sendCommand_RESISTANCE(UpperForceLimit(deviceSpeed_ms, targetForce_N), pedalSensor, weight_kg);
+    return rc;
 }
 
 

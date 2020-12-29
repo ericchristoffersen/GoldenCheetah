@@ -19,6 +19,7 @@
 
 #include "RealtimeController.h"
 #include "Fortius.h"
+#include "NSampleSmoothing.h"
 
 // Abstract base class for Realtime device controllers
 
@@ -53,9 +54,6 @@ public:
     void setGradientWithSimState(double, double, double) override;
     void setMode(int) override;
     void setWeight(double) override;
-    void setWindSpeed(double) override;
-    void setRollingResistance(double) override;
-    void setWindResistance(double) override;
 
     // calibration
     uint8_t  getCalibrationType() override;
@@ -68,6 +66,7 @@ public:
 private:
     uint8_t  calibrationState = CALIBRATION_STATE_IDLE;
     time_t   calibrationStarted;
+
     NSampleSmoothing<100> calibration_values;
 };
 
